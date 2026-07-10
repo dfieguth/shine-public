@@ -159,3 +159,6 @@ footer{background:var(--pine-deep);color:#bcd4cb;padding:52px 24px 34px}
 .announce p{max-width:900px;margin:0 auto;font-size:15px}
 .announce p+p{margin-top:6px}
 .announce strong{font-weight:600}
+
+/* Full-class tag on the schedule */
+.full-tag{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;background:#fdf1dd;color:#a3741f;padding:2px 8px;border-radius:12px;margin-left:6px;vertical-align:middle}

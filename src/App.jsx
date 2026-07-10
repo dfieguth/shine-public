@@ -166,11 +166,13 @@ function Schedule() {
   useEffect(() => {
     if (!supabase) return
     ;(async () => {
-      const { data, error } = await supabase
-        .from('classes')
-        .select('name, level, day_of_week, start_time, end_time')
-        .eq('active', true)
+      const [{ data, error }, { data: counts }] = await Promise.all([
+        supabase.from('classes').select('id, name, level, day_of_week, start_time, end_time, capacity').eq('active', true),
+        supabase.rpc('class_enrollment_counts'),
+      ])
       if (error || !data || data.length === 0) return
+      const countMap = {}
+      for (const r of counts || []) countMap[r.class_id] = Number(r.enrolled)
       const grouped = {}
       for (const c of data) {
         const day = c.day_of_week || 'Other'
@@ -179,6 +181,7 @@ function Schedule() {
           name: c.name,
           age: c.level || '',
           time: c.start_time ? `${c.start_time}${c.end_time ? `–${c.end_time}` : ''}` : '',
+          full: !!(c.capacity && (countMap[c.id] || 0) >= c.capacity),
         })
       }
       setDays(grouped)
@@ -202,7 +205,7 @@ function Schedule() {
             <div className="day-body">
               {days[day].map((c, i) => (
                 <div className="class-row" key={i}>
-                  <div className="cname">{c.name} {c.age && <span className="cage">· {c.age}</span>}</div>
+                  <div className="cname">{c.name} {c.age && <span className="cage">· {c.age}</span>} {c.full && <span className="full-tag">Full — waitlist open</span>}</div>
                   {c.time && <div className="ctime">{c.time}</div>}
                 </div>
               ))}
@@ -290,6 +293,21 @@ function Register() {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
   const [err, setErr] = useState('')
+  const [liveClasses, setLiveClasses] = useState(null)
+
+  useEffect(() => {
+    if (!supabase) return
+    ;(async () => {
+      const [{ data: cls }, { data: counts }] = await Promise.all([
+        supabase.from('classes').select('id, name, level, capacity').eq('active', true).order('name'),
+        supabase.rpc('class_enrollment_counts'),
+      ])
+      if (!cls || !cls.length) return
+      const map = {}
+      for (const r of counts || []) map[r.class_id] = Number(r.enrolled)
+      setLiveClasses(cls.map((c) => ({ name: c.name, level: c.level, full: !!(c.capacity && (map[c.id] || 0) >= c.capacity) })))
+    })()
+  }, [])
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
 
@@ -355,8 +373,14 @@ function Register() {
               <div className="fg">
                 <label>Class of interest</label>
                 <select value={form.interested_class} onChange={set('interested_class')}>
-                  {CLASS_OPTIONS.map((c) => <option key={c}>{c}</option>)}
+                  <option>Not sure yet — help me choose</option>
+                  {liveClasses
+                    ? liveClasses.map((c) => <option key={c.name} value={c.name}>{c.name}{c.level ? ` (${c.level})` : ''}{c.full ? ' — FULL, joins waitlist' : ''}</option>)
+                    : CLASS_OPTIONS.slice(1).map((c) => <option key={c}>{c}</option>)}
                 </select>
+                {liveClasses && liveClasses.find((c) => c.name === form.interested_class)?.full && (
+                  <p style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 6 }}>This class is currently full — your dancer will be added to the waitlist and Corrie will reach out.</p>
+                )}
               </div>
               <label className="check">
                 <input type="checkbox" checked={form.waiver} onChange={set('waiver')} />
