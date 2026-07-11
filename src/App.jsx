@@ -173,6 +173,14 @@ function Schedule() {
       if (error || !data || data.length === 0) return
       const countMap = {}
       for (const r of counts || []) countMap[r.class_id] = Number(r.enrolled)
+      const toMin = (t) => {
+        const m = (t || '').match(/(\d+):(\d+)\s*(AM|PM)?/i)
+        if (!m) return 9999
+        let h = +m[1]; const ap = (m[3] || '').toUpperCase()
+        if (ap === 'PM' && h !== 12) h += 12
+        if (ap === 'AM' && h === 12) h = 0
+        return h * 60 + +m[2]
+      }
       const grouped = {}
       for (const c of data) {
         const day = c.day_of_week || 'Other'
@@ -181,9 +189,11 @@ function Schedule() {
           name: c.name,
           age: c.level || '',
           time: c.start_time ? `${c.start_time}${c.end_time ? `–${c.end_time}` : ''}` : '',
+          sortKey: toMin(c.start_time),
           full: !!(c.capacity && (countMap[c.id] || 0) >= c.capacity),
         })
       }
+      for (const day of Object.keys(grouped)) grouped[day].sort((x, y) => x.sortKey - y.sortKey)
       setDays(grouped)
       setLive(true)
     })()
@@ -227,6 +237,23 @@ const TEAM = [
 ]
 
 function Instructors() {
+  const [team, setTeam] = useState(null)
+  useEffect(() => {
+    if (!supabase) return
+    ;(async () => {
+      const { data } = await supabase.from('team_members').select('name, role, bio, photo_path').eq('active', true).order('sort_order')
+      if (data && data.length) {
+        setTeam(data.map((m) => ({
+          name: m.name,
+          role: m.role || '',
+          bio: m.bio || '',
+          photo: m.photo_path ? supabase.storage.from(BUCKET).getPublicUrl(m.photo_path).data.publicUrl : null,
+          initials: (m.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2),
+        })))
+      }
+    })()
+  }, [])
+  const members = team || TEAM
   return (
     <section className="instructors">
       <Reveal className="section" id="instructors">
@@ -236,7 +263,7 @@ function Instructors() {
           <p>The teacher at the front of the room matters more than anything else. Here's who your child will be dancing with each week.</p>
         </div>
         <div className="inst-grid">
-          {TEAM.map((t) => (
+          {members.map((t) => (
             <div className="inst-card" key={t.name + t.role}>
               {t.photo
                 ? <img className="inst-photo" src={t.photo} alt={t.name} />
@@ -245,6 +272,60 @@ function Instructors() {
               <div className="inst-role">{t.role}</div>
               <p className="inst-bio">{t.bio}</p>
             </div>
+          ))}
+        </div>
+      </Reveal>
+    </section>
+  )
+}
+
+// Support Shine — donations flow through the church's own giving platform
+// (Pushpay), so gifts land on the church's books properly. Volunteering
+// mirrors the needs Corrie named: teachers, sign-in helpers, coordinators.
+const GIVE_URL = 'https://pushpay.com/g/ghfclamirada'
+
+function Support() {
+  return (
+    <section className="support">
+      <Reveal className="section">
+        <div className="section-head" style={{ marginBottom: 28 }}>
+          <span className="eyebrow">Support Shine</span>
+          <h2>Keep the classes free</h2>
+          <p>Shine is free for every family because people give their time and resources. If you feel led, you can give through Granada Heights Friends Church, or serve alongside us — we always welcome dance teachers, sign-in helpers, and volunteers.</p>
+        </div>
+        <div className="support-actions">
+          <a href={GIVE_URL} target="_blank" rel="noreferrer" className="btn-primary">Give through GHFC</a>
+          <a href="mailto:shineGHFC@gmail.com?subject=I%27d%20like%20to%20serve%20with%20Shine" className="btn-outline">Volunteer with us</a>
+        </div>
+      </Reveal>
+    </section>
+  )
+}
+
+// Parent testimonials — renders ONLY when real quotes exist in the database.
+function Testimonials() {
+  const [quotes, setQuotes] = useState([])
+  useEffect(() => {
+    if (!supabase) return
+    ;(async () => {
+      const { data } = await supabase.from('testimonials').select('quote, attribution').eq('active', true)
+      setQuotes(data || [])
+    })()
+  }, [])
+  if (!quotes.length) return null
+  return (
+    <section className="testimonials-wrap">
+      <Reveal className="section">
+        <div className="section-head">
+          <span className="eyebrow">From Our Families</span>
+          <h2>What parents say</h2>
+        </div>
+        <div className="quote-grid">
+          {quotes.map((q, i) => (
+            <blockquote className="quote-card" key={i}>
+              <p>"{q.quote}"</p>
+              {q.attribution && <footer>— {q.attribution}</footer>}
+            </blockquote>
           ))}
         </div>
       </Reveal>
@@ -418,6 +499,7 @@ function Footer() {
           <h4>Get started</h4>
           <a href="#register">Register a dancer</a>
           <a href="#classes">View classes</a>
+          <a href="https://pushpay.com/g/ghfclamirada" target="_blank" rel="noreferrer">Give through GHFC</a>
         </div>
       </div>
       <div className="foot-bottom">Shine Dance Studio · Granada Heights Friends Church</div>
@@ -434,7 +516,9 @@ export default function App() {
       <Mission />
       <Schedule />
       <Instructors />
+      <Testimonials />
       <Gallery />
+      <Support />
       <Register />
       <Footer />
     </>
