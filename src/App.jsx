@@ -162,15 +162,20 @@ function Mission() {
 function Schedule() {
   const [days, setDays] = useState(FALLBACK_SCHEDULE)
   const [live, setLive] = useState(false)
+  const [view, setView] = useState('list')
 
   useEffect(() => {
     if (!supabase) return
     ;(async () => {
-      const [{ data, error }, { data: counts }] = await Promise.all([
-        supabase.from('classes').select('id, name, level, day_of_week, start_time, end_time, capacity').eq('active', true),
+      const [{ data: rawData, error }, { data: counts }] = await Promise.all([
+        supabase.from('classes').select('id, name, level, day_of_week, start_time, end_time, capacity, min_age, max_age, season').eq('active', true),
         supabase.rpc('class_enrollment_counts'),
       ])
-      if (error || !data || data.length === 0) return
+      if (error || !rawData || rawData.length === 0) return
+      // Only show the most recent season on the public schedule so old
+      // years don't linger after a rollover.
+      const seasons = [...new Set(rawData.map((c) => c.season || ''))].sort().reverse()
+      const data = seasons.length > 1 ? rawData.filter((c) => (c.season || '') === seasons[0]) : rawData
       const countMap = {}
       for (const r of counts || []) countMap[r.class_id] = Number(r.enrolled)
       const toMin = (t) => {
@@ -185,9 +190,10 @@ function Schedule() {
       for (const c of data) {
         const day = c.day_of_week || 'Other'
         if (!grouped[day]) grouped[day] = []
+        const ageRange = (c.min_age || c.max_age) ? `Ages ${c.min_age || 0}${c.max_age ? `–${c.max_age}` : '+'}` : ''
         grouped[day].push({
           name: c.name,
-          age: c.level || '',
+          age: c.level || ageRange,
           time: c.start_time ? `${c.start_time}${c.end_time ? `–${c.end_time}` : ''}` : '',
           sortKey: toMin(c.start_time),
           full: !!(c.capacity && (countMap[c.id] || 0) >= c.capacity),
@@ -208,6 +214,27 @@ function Schedule() {
         <h2>Find the right class</h2>
         <p>Ballet, tap, and more, from PreBallet for our youngest dancers up through Ballet III and Pointe.</p>
       </div>
+      <div className="view-toggle">
+        <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>List</button>
+        <button className={view === 'week' ? 'active' : ''} onClick={() => setView('week')}>Weekly calendar</button>
+      </div>
+      {view === 'week' ? (
+        <div className="week-grid">
+          {orderedDays.map((day) => (
+            <div className="week-col" key={day}>
+              <div className="week-day">{day}</div>
+              {days[day].map((c, i) => (
+                <div className={`week-class ${c.full ? 'full' : ''}`} key={i}>
+                  <div className="wc-time">{c.time}</div>
+                  <div className="wc-name">{c.name}</div>
+                  {c.age && <div className="wc-age">{c.age}</div>}
+                  {c.full && <div className="wc-full">Waitlist</div>}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="sched-days">
         {orderedDays.map((day) => (
           <div className="day-col" key={day}>
@@ -223,6 +250,7 @@ function Schedule() {
           </div>
         ))}
       </div>
+      )}
       {live && <span className="live-dot"><i /> Schedule is live — updates the moment a leader makes a change</span>}
       <p className="sched-note">Don't see a fit, or not sure where your dancer belongs? <a href="#register">Reach out</a> and we'll help you find the right class.</p>
     </Reveal>
@@ -367,7 +395,7 @@ function Gallery() {
   )
 }
 
-const BLANK_FORM = { parent_name: '', email: '', phone: '', student_name: '', student_grade: '', interested_class: CLASS_OPTIONS[0], waiver: false }
+const BLANK_FORM = { parent_name: '', email: '', phone: '', student_name: '', student_grade: '', interested_classes: [], waiver: false }
 
 function Register() {
   const [form, setForm] = useState(BLANK_FORM)
@@ -391,6 +419,14 @@ function Register() {
   }, [])
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
+  function toggleClass(name) {
+    setForm((f) => ({
+      ...f,
+      interested_classes: f.interested_classes.includes(name)
+        ? f.interested_classes.filter((c) => c !== name)
+        : [...f.interested_classes, name],
+    }))
+  }
 
   async function submit() {
     setErr('')
@@ -399,13 +435,19 @@ function Register() {
     if (!form.waiver) { setErr('Please check the permission box to continue.'); return }
     if (!supabase) { setErr('Registration isn\'t connected yet. Please email Corrie at shineGHFC@gmail.com and she\'ll get you set up.'); return }
     setBusy(true)
+    // Store multiple selections as a readable comma-joined string in the
+    // existing interested_class column, so the admin's "Add to roster" class
+    // match still works per class name it recognizes.
+    const classesText = form.interested_classes.length
+      ? form.interested_classes.join(', ')
+      : 'Not sure yet — help me choose'
     const { error } = await supabase.from('registrations').insert({
       parent_name: form.parent_name.trim(),
       email: form.email.trim() || null,
       phone: form.phone.trim() || null,
       student_name: form.student_name.trim(),
       student_grade: form.student_grade.trim() || null,
-      interested_class: form.interested_class,
+      interested_class: classesText,
       waiver_acknowledged: true,
     })
     setBusy(false)
@@ -452,16 +494,23 @@ function Register() {
                 <div className="fg"><label>Grade or age</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} /></div>
               </div>
               <div className="fg">
-                <label>Class of interest</label>
-                <select value={form.interested_class} onChange={set('interested_class')}>
-                  <option>Not sure yet — help me choose</option>
+                <label>Classes of interest (select all that apply — many dancers take more than one)</label>
+                <div className="class-check-list">
                   {liveClasses
-                    ? liveClasses.map((c) => <option key={c.name} value={c.name}>{c.name}{c.level ? ` (${c.level})` : ''}{c.full ? ' — FULL, joins waitlist' : ''}</option>)
-                    : CLASS_OPTIONS.slice(1).map((c) => <option key={c}>{c}</option>)}
-                </select>
-                {liveClasses && liveClasses.find((c) => c.name === form.interested_class)?.full && (
-                  <p style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 6 }}>This class is currently full — your dancer will be added to the waitlist and Corrie will reach out.</p>
-                )}
+                    ? liveClasses.map((c) => (
+                        <label key={c.name} className="class-check-row">
+                          <input type="checkbox" checked={form.interested_classes.includes(c.name)} onChange={() => toggleClass(c.name)} />
+                          <span>{c.name}{c.level ? ` (${c.level})` : ''}{c.full && <span className="full-tag" style={{ marginLeft: 6 }}>Full — waitlist</span>}</span>
+                        </label>
+                      ))
+                    : CLASS_OPTIONS.slice(1).map((c) => (
+                        <label key={c} className="class-check-row">
+                          <input type="checkbox" checked={form.interested_classes.includes(c)} onChange={() => toggleClass(c)} />
+                          <span>{c}</span>
+                        </label>
+                      ))}
+                </div>
+                <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 6 }}>Not sure? Leave blank and Corrie will help you find the right fit.</p>
               </div>
               <label className="check">
                 <input type="checkbox" checked={form.waiver} onChange={set('waiver')} />
