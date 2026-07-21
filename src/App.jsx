@@ -130,7 +130,8 @@ function Hero() {
       <div className="hero-in">
         <span className="hero-eyebrow">Granada Heights Friends Church</span>
         <h1>Every kid gets to <em>shine</em>.</h1>
-        <p>Free dance classes for all ages and all levels. No cost, no experience needed, just a warm place to move, grow, and belong.</p>
+        <p className="hero-verse">"Let your light shine before others, that they may see your good deeds and glorify your Father in heaven." — Matthew 5:16</p>
+        <p>Free classes for our community. Shining God's love to students and families.</p>
         <div className="hero-actions">
           <a href="#register" className="btn-primary">Register your dancer</a>
           <a href="#classes" className="btn-ghost">See the schedule</a>
@@ -411,7 +412,6 @@ function Testimonials() {
 
 // Gallery: reads photos Corrie uploads in the admin tool (Photos screen).
 // Shows "coming soon" tiles until photos exist. Release-cleared photos only.
-const GALLERY_LAYOUT = ['tall', 'wide', '', '', 'wide', '', 'tall', '']
 
 function Gallery() {
   const [photos, setPhotos] = useState([])
@@ -434,7 +434,7 @@ function Gallery() {
       </div>
       <div className="gallery-grid">
         {tiles.map((src, i) => (
-          <figure className={`${GALLERY_LAYOUT[i % GALLERY_LAYOUT.length]} ${src ? 'has-img' : ''}`} key={i}>
+          <figure className={src ? 'has-img' : ''} key={i}>
             {src ? <img src={src} alt="Shine Dance Studio" loading="lazy" /> : <span>Photo coming soon</span>}
           </figure>
         ))}

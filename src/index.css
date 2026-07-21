@@ -109,14 +109,12 @@ button{font-family:inherit;cursor:pointer}
 .inst-bio{font-size:14.5px;color:var(--ink-soft);max-width:24em;margin:0 auto}
 
 /* ---------- Gallery ---------- */
-.gallery-grid{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:180px;gap:12px}
-.gallery-grid figure{overflow:hidden;border-radius:12px;position:relative;background:var(--paper);border:1px dashed var(--line);display:grid;place-items:center;color:var(--ink-soft);font-size:13px;text-align:center;padding:10px}
+.gallery-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.gallery-grid figure{overflow:hidden;border-radius:12px;position:relative;aspect-ratio:1/1;background:var(--paper);border:1px dashed var(--line);display:grid;place-items:center;color:var(--ink-soft);font-size:13px;text-align:center;padding:10px;margin:0}
 .gallery-grid figure.has-img{border:none;padding:0}
 .gallery-grid img{width:100%;height:100%;object-fit:cover;transition:transform .5s}
 .gallery-grid figure:hover img{transform:scale(1.06)}
-.gallery-grid .tall{grid-row:span 2}
-.gallery-grid .wide{grid-column:span 2}
-@media(max-width:760px){.gallery-grid{grid-template-columns:repeat(2,1fr);grid-auto-rows:140px}.gallery-grid .wide{grid-column:span 2}}
+@media(max-width:760px){.gallery-grid{grid-template-columns:repeat(2,1fr)}}
 
 /* ---------- Register ---------- */
 .register{background:var(--pine);color:#fdf9ef}
@@ -212,3 +210,6 @@ footer{background:var(--pine-deep);color:#bcd4cb;padding:52px 24px 34px}
 .vol-fg input,.vol-fg textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:15px;background:#fff;color:var(--ink)}
 .vol-fg input:focus,.vol-fg textarea:focus{outline:2px solid var(--pine);outline-offset:-1px;border-color:transparent}
 .vol-err{background:#fbeeec;color:#b23a2e;font-size:13.5px;padding:9px 12px;border-radius:8px;margin-bottom:14px}
+
+/* Theme verse under the hero headline */
+.hero-verse{font-style:italic;font-size:16px!important;color:var(--brass-soft)!important;max-width:32em;margin:0 auto 10px!important;text-shadow:0 1px 12px rgba(0,0,0,.35)}
