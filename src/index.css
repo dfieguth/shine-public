@@ -202,3 +202,13 @@ footer{background:var(--pine-deep);color:#bcd4cb;padding:52px 24px 34px}
 .wc-full{display:inline-block;font-size:10.5px;font-weight:600;text-transform:uppercase;background:#fdf1dd;color:#a3741f;padding:1px 7px;border-radius:10px;margin-top:5px}
 @media(max-width:860px){.week-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:500px){.week-grid{grid-template-columns:1fr}}
+
+/* ---------- Volunteer form modal ---------- */
+.vol-overlay{position:fixed;inset:0;background:rgba(15,30,26,.55);display:flex;align-items:center;justify-content:center;padding:20px;z-index:60}
+.vol-modal{background:var(--paper);border-radius:16px;padding:28px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.vol-modal h3{font-size:22px;color:var(--pine-dark)}
+.vol-fg{margin-bottom:14px}
+.vol-fg label{display:block;font-size:13px;font-weight:500;color:var(--ink);margin-bottom:5px}
+.vol-fg input,.vol-fg textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:15px;background:#fff;color:var(--ink)}
+.vol-fg input:focus,.vol-fg textarea:focus{outline:2px solid var(--pine);outline-offset:-1px;border-color:transparent}
+.vol-err{background:#fbeeec;color:#b23a2e;font-size:13.5px;padding:9px 12px;border-radius:8px;margin-bottom:14px}

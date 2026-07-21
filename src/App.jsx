@@ -313,6 +313,26 @@ function Instructors() {
 const GIVE_URL = 'https://pushpay.com/g/ghfclamirada'
 
 function Support() {
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' })
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  const [err, setErr] = useState('')
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+  async function submit() {
+    setErr('')
+    if (!form.name.trim()) { setErr('Please add your name.'); return }
+    if (!form.email.trim() && !form.phone.trim()) { setErr('Please add an email or phone so we can reach you.'); return }
+    if (!supabase) { setErr('Not connected yet — please email shineGHFC@gmail.com directly.'); return }
+    setBusy(true)
+    const { error } = await supabase.from('volunteer_inquiries').insert({
+      name: form.name.trim(), email: form.email.trim() || null,
+      phone: form.phone.trim() || null, message: form.message.trim() || null,
+    })
+    setBusy(false)
+    if (error) { setErr('Something went wrong — please email shineGHFC@gmail.com.'); return }
+    setDone(true)
+  }
   return (
     <section className="support">
       <Reveal className="section">
@@ -323,9 +343,37 @@ function Support() {
         </div>
         <div className="support-actions">
           <a href={GIVE_URL} target="_blank" rel="noreferrer" className="btn-primary">Give through GHFC</a>
-          <a href="mailto:shineGHFC@gmail.com?subject=I%27d%20like%20to%20serve%20with%20Shine" className="btn-outline">Volunteer with us</a>
+          <button className="btn-outline" onClick={() => { setShowForm(true); setDone(false); setErr('') }}>Volunteer with us</button>
         </div>
       </Reveal>
+      {showForm && (
+        <div className="vol-overlay" onClick={() => setShowForm(false)}>
+          <div className="vol-modal" onClick={(e) => e.stopPropagation()}>
+            {done ? (
+              <div style={{ textAlign: 'center', padding: '10px 4px' }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>🙌</div>
+                <h3 style={{ marginBottom: 8 }}>Thank you, {form.name.split(' ')[0]}!</h3>
+                <p style={{ color: 'var(--ink-soft)', fontSize: 15 }}>Corrie will reach out about serving with Shine.</p>
+                <button className="btn-primary" style={{ marginTop: 18 }} onClick={() => setShowForm(false)}>Close</button>
+              </div>
+            ) : (
+              <>
+                <h3 style={{ marginBottom: 4 }}>Volunteer with Shine</h3>
+                <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 18 }}>Tell us a little about you and Corrie will be in touch.</p>
+                {err && <div className="vol-err">{err}</div>}
+                <div className="vol-fg"><label>Your name</label><input value={form.name} onChange={set('name')} placeholder="Name" /></div>
+                <div className="vol-fg"><label>Email</label><input type="email" value={form.email} onChange={set('email')} placeholder="you@email.com" /></div>
+                <div className="vol-fg"><label>Phone</label><input type="tel" value={form.phone} onChange={set('phone')} placeholder="(000) 000-0000" /></div>
+                <div className="vol-fg"><label>How would you like to help? (optional)</label><textarea value={form.message} onChange={set('message')} rows={3} placeholder="Teaching, sign-in help, etc." /></div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
+                  <button className="btn-outline" onClick={() => setShowForm(false)}>Cancel</button>
+                  <button className="btn-primary" onClick={submit} disabled={busy}>{busy ? 'Sending…' : 'Send'}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   )
 }
