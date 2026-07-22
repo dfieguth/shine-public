@@ -176,9 +176,9 @@ footer{background:var(--pine-deep);color:#bcd4cb;padding:52px 24px 34px}
 
 /* Multi-select class checklist on the registration form */
 .class-check-list{max-height:200px;overflow-y:auto;border:1px solid var(--line);border-radius:9px;padding:6px 4px;background:#fff}
-.class-check-row{display:flex;gap:10px;align-items:center;padding:8px 9px;font-size:14px;cursor:pointer;border-radius:6px}
+.class-check-row{display:flex;gap:10px;align-items:flex-start;padding:9px;font-size:14px;cursor:pointer;border-radius:6px}
 .class-check-row:hover{background:var(--cream)}
-.class-check-row input{width:auto;flex-shrink:0}
+.class-check-row input{width:auto;flex-shrink:0;margin-top:3px}
 
 /* ---------- Schedule view toggle ---------- */
 .view-toggle{display:flex;gap:0;justify-content:center;margin-bottom:28px}

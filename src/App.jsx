@@ -447,8 +447,9 @@ function Gallery() {
 }
 
 const BLANK_FORM = {
+  is_returning: '', // '' | 'new' | 'returning'
   parent_name: '', email: '', phone: '',
-  student_name: '', student_grade: '', student_birthday: '',
+  student_name: '', student_grade: '', student_age: '', student_birthday: '',
   secondary_parent_name: '', secondary_parent_email: '', secondary_parent_phone: '',
   emergency_contact_name: '', emergency_contact_relationship: '', emergency_contact_phone: '',
   interested_classes: [],
@@ -468,13 +469,20 @@ function Register() {
     if (!supabase) return
     ;(async () => {
       const [{ data: cls }, { data: counts }] = await Promise.all([
-        supabase.from('classes').select('id, name, level, capacity').eq('active', true).order('name'),
+        supabase.from('classes').select('id, name, level, capacity, day_of_week, start_time, end_time, min_age, max_age').eq('active', true).order('name'),
         supabase.rpc('class_enrollment_counts'),
       ])
       if (!cls || !cls.length) return
       const map = {}
       for (const r of counts || []) map[r.class_id] = Number(r.enrolled)
-      setLiveClasses(cls.map((c) => ({ name: c.name, level: c.level, full: !!(c.capacity && (map[c.id] || 0) >= c.capacity) })))
+      setLiveClasses(cls.map((c) => {
+        const ageRange = (c.min_age || c.max_age) ? `Ages ${c.min_age || 0}${c.max_age ? `–${c.max_age}` : '+'}` : ''
+        const when = [c.day_of_week, c.start_time ? `${c.start_time}${c.end_time ? `–${c.end_time}` : ''}` : ''].filter(Boolean).join(' ')
+        return {
+          name: c.name, level: c.level, when, ageRange,
+          full: !!(c.capacity && (map[c.id] || 0) >= c.capacity),
+        }
+      }))
     })()
   }, [])
 
@@ -490,6 +498,7 @@ function Register() {
 
   async function submit() {
     setErr('')
+    if (!form.is_returning) { setErr('Please let us know if your dancer is new to Shine or returning.'); return }
     if (!form.parent_name.trim() || !form.student_name.trim()) { setErr('Please add your name and your dancer\'s name.'); return }
     if (!form.email.trim() && !form.phone.trim()) { setErr('Please add an email or a phone number so we can reach you.'); return }
     if (!form.meeting_aug28 && !form.meeting_sep3) { setErr('Please select at least one Mandatory Parent Meeting date you plan to attend.'); return }
@@ -506,6 +515,7 @@ function Register() {
       phone: form.phone.trim() || null,
       student_name: form.student_name.trim(),
       student_grade: form.student_grade.trim() || null,
+      student_age: form.student_age.trim() || null,
       student_birthday: form.student_birthday || null,
       secondary_parent_name: form.secondary_parent_name.trim() || null,
       secondary_parent_email: form.secondary_parent_email.trim() || null,
@@ -514,6 +524,7 @@ function Register() {
       emergency_contact_relationship: form.emergency_contact_relationship.trim() || null,
       emergency_contact_phone: form.emergency_contact_phone.trim() || null,
       interested_class: classesText,
+      is_returning: form.is_returning === 'returning',
       meeting_aug28: form.meeting_aug28,
       meeting_sep3: form.meeting_sep3,
       meeting_acknowledged: true,
@@ -558,6 +569,18 @@ function Register() {
               <p className="sub">Sign up or join the waiting list — we'll take it from there.</p>
               {err && <div className="form-err">{err}</div>}
 
+              <p className="form-section-label">Is your dancer new to Shine, or returning?</p>
+              <div className="class-check-list" style={{ display: 'flex', gap: 0 }}>
+                <label className="class-check-row" style={{ flex: 1 }}>
+                  <input type="radio" name="is_returning" checked={form.is_returning === 'new'} onChange={() => setForm({ ...form, is_returning: 'new' })} />
+                  <span>New student</span>
+                </label>
+                <label className="class-check-row" style={{ flex: 1 }}>
+                  <input type="radio" name="is_returning" checked={form.is_returning === 'returning'} onChange={() => setForm({ ...form, is_returning: 'returning' })} />
+                  <span>Returning student</span>
+                </label>
+              </div>
+
               <p className="form-section-label">Parent / Guardian (Primary)</p>
               <div className="fg">
                 <label>Your name</label>
@@ -591,13 +614,12 @@ function Register() {
               <p className="form-section-label">Dancer</p>
               <div className="fg2">
                 <div className="fg"><label>Child's name</label><input type="text" placeholder="Dancer's name" value={form.student_name} onChange={set('student_name')} /></div>
-                <div className="fg"><label>Grade or age</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} /></div>
+                <div className="fg"><label>Grade</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} /></div>
               </div>
-              <div className="fg">
-                <label>Student birthday</label>
-                <input type="date" value={form.student_birthday} onChange={set('student_birthday')} />
+              <div className="fg2">
+                <div className="fg"><label>Age</label><input type="text" placeholder="e.g. 8" value={form.student_age} onChange={set('student_age')} /></div>
+                <div className="fg"><label>Student birthday</label><input type="date" value={form.student_birthday} onChange={set('student_birthday')} /></div>
               </div>
-
               <div className="fg">
                 <label>Classes of interest (select all that apply — many dancers take more than one)</label>
                 <div className="class-check-list">
@@ -605,7 +627,10 @@ function Register() {
                     ? liveClasses.map((c) => (
                         <label key={c.name} className="class-check-row">
                           <input type="checkbox" checked={form.interested_classes.includes(c.name)} onChange={() => toggleClass(c.name)} />
-                          <span>{c.name}{c.level ? ` (${c.level})` : ''}{c.full && <span className="full-tag" style={{ marginLeft: 6 }}>Full — waitlist</span>}</span>
+                          <span>
+                            <strong>{c.name}</strong>{c.level ? ` (${c.level})` : ''}{c.full && <span className="full-tag" style={{ marginLeft: 6 }}>Full — waitlist</span>}
+                            <br /><span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{[c.when, c.ageRange].filter(Boolean).join(' · ')}</span>
+                          </span>
                         </label>
                       ))
                     : CLASS_OPTIONS.slice(1).map((c) => (
@@ -621,7 +646,9 @@ function Register() {
               <p className="form-section-label">Mandatory Parent Meeting</p>
               <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8 }}>I plan to attend the Mandatory Parent Meeting on:</p>
               <label className="check"><input type="checkbox" checked={form.meeting_aug28} onChange={set('meeting_aug28')} /><span>Friday, August 28th, 6:00–7:00pm</span></label>
-              <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>Thursday, September 3rd, 6:30–7:30pm</span></label>
+              {/* Field name "meeting_sep3" is a historical internal key — the
+                  actual date/time shown to parents is the source of truth below. */}
+              <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>Wednesday, September 2nd, 7:00–8:00pm</span></label>
               <label className="check"><input type="checkbox" checked={form.meeting_acknowledged} onChange={set('meeting_acknowledged')} /><span>I understand my student's enrollment with Shine is <strong>NOT complete</strong> until a parent or guardian attends one of the above meeting dates.</span></label>
 
               <p className="form-section-label">Registration Donation</p>
