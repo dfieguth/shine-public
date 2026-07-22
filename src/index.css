@@ -213,3 +213,8 @@ footer{background:var(--pine-deep);color:#bcd4cb;padding:52px 24px 34px}
 
 /* Theme verse under the hero headline */
 .hero-verse{font-style:italic;font-size:16px!important;color:var(--brass-soft)!important;max-width:32em;margin:0 auto 10px!important;text-shadow:0 1px 12px rgba(0,0,0,.35)}
+
+/* Registration form: section labels + donation CTA */
+.form-section-label{font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--brass);margin:22px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
+.form-card > .form-section-label:first-of-type{border-top:none;padding-top:0;margin-top:0}
+.donate-cta{background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:18px}

@@ -443,7 +443,16 @@ function Gallery() {
   )
 }
 
-const BLANK_FORM = { parent_name: '', email: '', phone: '', student_name: '', student_grade: '', interested_classes: [], waiver: false }
+const BLANK_FORM = {
+  parent_name: '', email: '', phone: '',
+  student_name: '', student_grade: '', student_birthday: '',
+  secondary_parent_name: '', secondary_parent_email: '', secondary_parent_phone: '',
+  emergency_contact_name: '', emergency_contact_relationship: '', emergency_contact_phone: '',
+  interested_classes: [],
+  meeting_aug28: false, meeting_sep3: false, meeting_acknowledged: false,
+  wants_donation: false,
+  waiver: false,
+}
 
 function Register() {
   const [form, setForm] = useState(BLANK_FORM)
@@ -480,12 +489,11 @@ function Register() {
     setErr('')
     if (!form.parent_name.trim() || !form.student_name.trim()) { setErr('Please add your name and your dancer\'s name.'); return }
     if (!form.email.trim() && !form.phone.trim()) { setErr('Please add an email or a phone number so we can reach you.'); return }
+    if (!form.meeting_aug28 && !form.meeting_sep3) { setErr('Please select at least one Mandatory Parent Meeting date you plan to attend.'); return }
+    if (!form.meeting_acknowledged) { setErr('Please confirm you understand enrollment isn\'t complete until a parent meeting is attended.'); return }
     if (!form.waiver) { setErr('Please check the permission box to continue.'); return }
     if (!supabase) { setErr('Registration isn\'t connected yet. Please email Corrie at shineGHFC@gmail.com and she\'ll get you set up.'); return }
     setBusy(true)
-    // Store multiple selections as a readable comma-joined string in the
-    // existing interested_class column, so the admin's "Add to roster" class
-    // match still works per class name it recognizes.
     const classesText = form.interested_classes.length
       ? form.interested_classes.join(', ')
       : 'Not sure yet — help me choose'
@@ -495,7 +503,18 @@ function Register() {
       phone: form.phone.trim() || null,
       student_name: form.student_name.trim(),
       student_grade: form.student_grade.trim() || null,
+      student_birthday: form.student_birthday || null,
+      secondary_parent_name: form.secondary_parent_name.trim() || null,
+      secondary_parent_email: form.secondary_parent_email.trim() || null,
+      secondary_parent_phone: form.secondary_parent_phone.trim() || null,
+      emergency_contact_name: form.emergency_contact_name.trim() || null,
+      emergency_contact_relationship: form.emergency_contact_relationship.trim() || null,
+      emergency_contact_phone: form.emergency_contact_phone.trim() || null,
       interested_class: classesText,
+      meeting_aug28: form.meeting_aug28,
+      meeting_sep3: form.meeting_sep3,
+      meeting_acknowledged: true,
+      wants_donation: form.wants_donation,
       waiver_acknowledged: true,
     })
     setBusy(false)
@@ -509,7 +528,7 @@ function Register() {
         <div>
           <span className="eyebrow">Registration</span>
           <h2>Ready to join us?</h2>
-          <p className="lead">Fill this out to sign up or to be added to a waiting list, and Corrie will reach out with your dancer's class details. It takes about two minutes.</p>
+          <p className="lead">Fill this out to sign up or to be added to a waiting list, and Corrie will reach out with your dancer's class details. It takes about five minutes.</p>
           <ul className="reg-perks">
             <li><span className="dot">✓</span> Completely free — always</li>
             <li><span className="dot">✓</span> No dance experience required</li>
@@ -523,24 +542,59 @@ function Register() {
               <div className="big">🎉</div>
               <h3>You're in!</h3>
               <p>Thanks, {form.parent_name.split(' ')[0]}. Corrie will reach out soon with details for {form.student_name.split(' ')[0]}'s class.</p>
+              {form.wants_donation && (
+                <div className="donate-cta">
+                  <p style={{ fontSize: 14.5, marginBottom: 10 }}>You noted you'd like to make a $100 registration donation — thank you! You can complete that here whenever's convenient:</p>
+                  <a href={GIVE_URL} target="_blank" rel="noreferrer" className="btn-primary">Complete registration donation</a>
+                </div>
+              )}
             </div>
           ) : (
             <>
               <h3>Register your dancer</h3>
               <p className="sub">Sign up or join the waiting list — we'll take it from there.</p>
               {err && <div className="form-err">{err}</div>}
+
+              <p className="form-section-label">Parent / Guardian (Primary)</p>
               <div className="fg">
-                <label>Parent / guardian name</label>
+                <label>Your name</label>
                 <input type="text" placeholder="Your name" value={form.parent_name} onChange={set('parent_name')} />
               </div>
               <div className="fg2">
                 <div className="fg"><label>Email</label><input type="email" placeholder="you@email.com" value={form.email} onChange={set('email')} /></div>
                 <div className="fg"><label>Phone</label><input type="tel" placeholder="(000) 000-0000" value={form.phone} onChange={set('phone')} /></div>
               </div>
+
+              <p className="form-section-label">Parent / Guardian (Secondary — optional)</p>
+              <div className="fg">
+                <label>Name</label>
+                <input type="text" placeholder="Optional" value={form.secondary_parent_name} onChange={set('secondary_parent_name')} />
+              </div>
+              <div className="fg2">
+                <div className="fg"><label>Email</label><input type="email" placeholder="Optional" value={form.secondary_parent_email} onChange={set('secondary_parent_email')} /></div>
+                <div className="fg"><label>Phone</label><input type="tel" placeholder="Optional" value={form.secondary_parent_phone} onChange={set('secondary_parent_phone')} /></div>
+              </div>
+
+              <p className="form-section-label">Emergency Contact (other than a parent)</p>
+              <div className="fg2">
+                <div className="fg"><label>Name</label><input type="text" value={form.emergency_contact_name} onChange={set('emergency_contact_name')} /></div>
+                <div className="fg"><label>Relationship</label><input type="text" placeholder="e.g. Grandparent, neighbor" value={form.emergency_contact_relationship} onChange={set('emergency_contact_relationship')} /></div>
+              </div>
+              <div className="fg">
+                <label>Phone</label>
+                <input type="tel" value={form.emergency_contact_phone} onChange={set('emergency_contact_phone')} />
+              </div>
+
+              <p className="form-section-label">Dancer</p>
               <div className="fg2">
                 <div className="fg"><label>Child's name</label><input type="text" placeholder="Dancer's name" value={form.student_name} onChange={set('student_name')} /></div>
                 <div className="fg"><label>Grade or age</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} /></div>
               </div>
+              <div className="fg">
+                <label>Student birthday</label>
+                <input type="date" value={form.student_birthday} onChange={set('student_birthday')} />
+              </div>
+
               <div className="fg">
                 <label>Classes of interest (select all that apply — many dancers take more than one)</label>
                 <div className="class-check-list">
@@ -560,7 +614,17 @@ function Register() {
                 </div>
                 <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 6 }}>Not sure? Leave blank and Corrie will help you find the right fit.</p>
               </div>
-              <label className="check">
+
+              <p className="form-section-label">Mandatory Parent Meeting</p>
+              <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8 }}>I plan to attend the Mandatory Parent Meeting on:</p>
+              <label className="check"><input type="checkbox" checked={form.meeting_aug28} onChange={set('meeting_aug28')} /><span>Friday, August 28th, 6:00–7:00pm</span></label>
+              <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>Thursday, September 3rd, 6:30–7:30pm</span></label>
+              <label className="check"><input type="checkbox" checked={form.meeting_acknowledged} onChange={set('meeting_acknowledged')} /><span>I understand my student's enrollment with Shine is <strong>NOT complete</strong> until a parent or guardian attends one of the above meeting dates.</span></label>
+
+              <p className="form-section-label">Registration Donation</p>
+              <label className="check"><input type="checkbox" checked={form.wants_donation} onChange={set('wants_donation')} /><span>I understand Shine is run completely by volunteers and donations. I would like to make a registration donation (suggested amount: $100 per family).</span></label>
+
+              <label className="check" style={{ marginTop: 14 }}>
                 <input type="checkbox" checked={form.waiver} onChange={set('waiver')} />
                 <span>I understand this is a church ministry program and give permission for my child to participate.</span>
               </label>
@@ -573,7 +637,6 @@ function Register() {
     </section>
   )
 }
-
 function Footer() {
   return (
     <footer>
