@@ -312,6 +312,9 @@ function Instructors() {
 // (Pushpay), so gifts land on the church's books properly. Volunteering
 // mirrors the needs Corrie named: teachers, sign-in helpers, coordinators.
 const GIVE_URL = 'https://pushpay.com/g/ghfclamirada'
+// The registration donation flow uses Shine's own CCB form, not Pushpay,
+// per Corrie's confirmation.
+const REGISTRATION_DONATION_URL = 'https://granadaheightsfriendschurch.ccbchurch.com/goto/forms/303/responses/new'
 
 function Support() {
   const [showForm, setShowForm] = useState(false)
@@ -545,7 +548,7 @@ function Register() {
               {form.wants_donation && (
                 <div className="donate-cta">
                   <p style={{ fontSize: 14.5, marginBottom: 10 }}>You noted you'd like to make a $100 registration donation — thank you! You can complete that here whenever's convenient:</p>
-                  <a href={GIVE_URL} target="_blank" rel="noreferrer" className="btn-primary">Complete registration donation</a>
+                  <a href={REGISTRATION_DONATION_URL} target="_blank" rel="noreferrer" className="btn-primary">Complete registration donation</a>
                 </div>
               )}
             </div>
@@ -607,80 +610,4 @@ function Register() {
                       ))
                     : CLASS_OPTIONS.slice(1).map((c) => (
                         <label key={c} className="class-check-row">
-                          <input type="checkbox" checked={form.interested_classes.includes(c)} onChange={() => toggleClass(c)} />
-                          <span>{c}</span>
-                        </label>
-                      ))}
-                </div>
-                <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 6 }}>Not sure? Leave blank and Corrie will help you find the right fit.</p>
-              </div>
-
-              <p className="form-section-label">Mandatory Parent Meeting</p>
-              <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8 }}>I plan to attend the Mandatory Parent Meeting on:</p>
-              <label className="check"><input type="checkbox" checked={form.meeting_aug28} onChange={set('meeting_aug28')} /><span>Friday, August 28th, 6:00–7:00pm</span></label>
-              <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>Thursday, September 3rd, 6:30–7:30pm</span></label>
-              <label className="check"><input type="checkbox" checked={form.meeting_acknowledged} onChange={set('meeting_acknowledged')} /><span>I understand my student's enrollment with Shine is <strong>NOT complete</strong> until a parent or guardian attends one of the above meeting dates.</span></label>
-
-              <p className="form-section-label">Registration Donation</p>
-              <label className="check"><input type="checkbox" checked={form.wants_donation} onChange={set('wants_donation')} /><span>I understand Shine is run completely by volunteers and donations. I would like to make a registration donation (suggested amount: $100 per family).</span></label>
-
-              <label className="check" style={{ marginTop: 14 }}>
-                <input type="checkbox" checked={form.waiver} onChange={set('waiver')} />
-                <span>I understand this is a church ministry program and give permission for my child to participate.</span>
-              </label>
-              <button className="btn-primary" onClick={submit} disabled={busy}>{busy ? 'Sending…' : 'Submit registration'}</button>
-              <p className="form-note">Questions? Email Corrie Villa at shineGHFC@gmail.com and she'll help you get started.</p>
-            </>
-          )}
-        </div>
-      </div>
-    </section>
-  )
-}
-function Footer() {
-  return (
-    <footer>
-      <div className="foot-in">
-        <div className="foot-col">
-          <div className="logo">Shine<span style={{ color: 'var(--brass)' }}>.</span></div>
-          <p>A free dance ministry of<br />Granada Heights Friends Church.</p>
-        </div>
-        <div className="foot-col">
-          <h4>Visit</h4>
-          <p>Granada Heights Friends Church<br />11818 La Mirada Blvd.<br />La Mirada, CA 90638</p>
-        </div>
-        <div className="foot-col">
-          <h4>Connect</h4>
-          <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a>
-          <a href="tel:5629437255">562.943.7255</a>
-          <a href="https://www.ghfc.org" target="_blank" rel="noreferrer">www.ghfc.org</a>
-        </div>
-        <div className="foot-col">
-          <h4>Get started</h4>
-          <a href="#register">Register a dancer</a>
-          <a href="#classes">View classes</a>
-          <a href="https://pushpay.com/g/ghfclamirada" target="_blank" rel="noreferrer">Give through GHFC</a>
-        </div>
-      </div>
-      <div className="foot-bottom">Shine Dance Studio · Granada Heights Friends Church</div>
-    </footer>
-  )
-}
-
-export default function App() {
-  return (
-    <>
-      <Nav />
-      <Hero />
-      <AnnouncementBanner />
-      <Mission />
-      <Schedule />
-      <Instructors />
-      <Testimonials />
-      <Gallery />
-      <Support />
-      <Register />
-      <Footer />
-    </>
-  )
-}
+                          <input type="checkbox"
