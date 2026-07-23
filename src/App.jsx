@@ -621,7 +621,7 @@ function Register() {
                 <div className="fg"><label>Student birthday</label><input type="date" value={form.student_birthday} onChange={set('student_birthday')} /></div>
               </div>
               <div className="fg">
-                <label>Classes of interest (select all that apply — many dancers take more than one)</label>
+                <label>Please select your class(es) for enrollment.</label>
                 <div className="class-check-list">
                   {liveClasses
                     ? liveClasses.map((c) => (
