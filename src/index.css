@@ -109,12 +109,17 @@ button{font-family:inherit;cursor:pointer}
 .inst-bio{font-size:14.5px;color:var(--ink-soft);max-width:24em;margin:0 auto}
 
 /* ---------- Gallery ---------- */
-.gallery-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.gallery-grid figure{overflow:hidden;border-radius:12px;position:relative;aspect-ratio:1/1;background:var(--paper);border:1px dashed var(--line);display:grid;place-items:center;color:var(--ink-soft);font-size:13px;text-align:center;padding:10px;margin:0}
-.gallery-grid figure.has-img{border:none;padding:0}
-.gallery-grid img{width:100%;height:100%;object-fit:cover;transition:transform .5s}
-.gallery-grid figure:hover img{transform:scale(1.06)}
-@media(max-width:760px){.gallery-grid{grid-template-columns:repeat(2,1fr)}}
+/* Masonry layout — each photo keeps its own natural shape (portrait stays
+   tall, landscape stays wide) and packs together with no gaps, instead of
+   force-cropping everything into a uniform square. */
+.gallery-grid{column-count:4;column-gap:12px}
+.gallery-grid figure{break-inside:avoid;overflow:hidden;border-radius:12px;position:relative;background:var(--paper);border:1px dashed var(--line);margin:0 0 12px;display:grid;place-items:center;color:var(--ink-soft);font-size:13px;text-align:center;padding:24px 10px;min-height:120px}
+.gallery-grid figure.has-img{border:none;padding:0;display:block}
+.gallery-grid img{width:100%;height:auto;display:block;transition:transform .5s}
+.gallery-grid figure:hover img{transform:scale(1.05)}
+@media(max-width:860px){.gallery-grid{column-count:3}}
+@media(max-width:760px){.gallery-grid{column-count:2}}
+@media(max-width:480px){.gallery-grid{column-count:1}}
 
 /* ---------- Register ---------- */
 .register{background:var(--pine);color:#fdf9ef}
