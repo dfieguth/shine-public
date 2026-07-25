@@ -89,24 +89,74 @@ function Reveal({ children, className = '', id }) {
 
 function Nav() {
   const [solid, setSolid] = useState(false)
+  const [showInterest, setShowInterest] = useState(false)
+  const [iForm, setIForm] = useState({ name: '', email: '', phone: '', message: '' })
+  const [iBusy, setIBusy] = useState(false)
+  const [iDone, setIDone] = useState(false)
+  const [iErr, setIErr] = useState('')
   useEffect(() => {
     const onScroll = () => setSolid(window.scrollY > 40)
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+  const setI = (k) => (e) => setIForm({ ...iForm, [k]: e.target.value })
+  async function submitInterest() {
+    setIErr('')
+    if (!iForm.name.trim()) { setIErr('Please add your name.'); return }
+    if (!iForm.email.trim()) { setIErr('Please add an email so we can reach you.'); return }
+    if (!supabase) { setIErr('Not connected yet — please email shineGHFC@gmail.com directly.'); return }
+    setIBusy(true)
+    const { error } = await supabase.from('contact_interest').insert({
+      name: iForm.name.trim(), email: iForm.email.trim(), phone: iForm.phone.trim() || null, message: iForm.message.trim() || null,
+    })
+    setIBusy(false)
+    if (error) { setIErr('Something went wrong — please email shineGHFC@gmail.com.'); return }
+    setIDone(true)
+  }
   return (
-    <nav className={`nav ${solid ? 'solid' : ''}`}>
-      <div className="nav-in">
-        <a href="#top" className="logo">Shine<span>.</span></a>
-        <div className="nav-links">
-          <a href="#classes">Classes</a>
-          <a href="#instructors">Our Team</a>
-          <a href="#gallery">Gallery</a>
-          <a href="#register" className="nav-cta">Register</a>
+    <>
+      <nav className={`nav ${solid ? 'solid' : ''}`}>
+        <div className="nav-in">
+          <a href="#top" className="logo">Shine<span>.</span></a>
+          <div className="nav-links">
+            <a href="#classes">Classes</a>
+            <a href="#instructors">Our Team</a>
+            <a href="#gallery">Gallery</a>
+            <button className="nav-text-btn" onClick={() => { setShowInterest(true); setIDone(false); setIErr('') }}>Just have questions?</button>
+            <a href="#register" className="nav-cta">Register</a>
+          </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+      {showInterest && (
+        <div className="vol-overlay" onClick={() => setShowInterest(false)}>
+          <div className="vol-modal" onClick={(e) => e.stopPropagation()}>
+            {iDone ? (
+              <div style={{ textAlign: 'center', padding: '10px 4px' }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>👋</div>
+                <h3 style={{ marginBottom: 8 }}>You're on the list!</h3>
+                <p style={{ color: 'var(--ink-soft)', fontSize: 15 }}>We'll reach out when there's news or a new class opens up.</p>
+                <button className="btn-primary" style={{ marginTop: 18 }} onClick={() => setShowInterest(false)}>Close</button>
+              </div>
+            ) : (
+              <>
+                <h3 style={{ marginBottom: 4 }}>Not ready to enroll yet?</h3>
+                <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 18 }}>Add your info and we'll keep you posted — no commitment, no registration needed.</p>
+                {iErr && <div className="vol-err">{iErr}</div>}
+                <div className="vol-fg"><label>Your name</label><input value={iForm.name} onChange={setI('name')} placeholder="Name" /></div>
+                <div className="vol-fg"><label>Email</label><input type="email" value={iForm.email} onChange={setI('email')} placeholder="you@email.com" /></div>
+                <div className="vol-fg"><label>Phone (optional)</label><input type="tel" value={iForm.phone} onChange={setI('phone')} placeholder="(000) 000-0000" /></div>
+                <div className="vol-fg"><label>Anything you'd like us to know? (optional)</label><textarea value={iForm.message} onChange={setI('message')} rows={2} /></div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
+                  <button className="btn-outline" onClick={() => setShowInterest(false)}>Cancel</button>
+                  <button className="btn-primary" onClick={submitInterest} disabled={iBusy}>{iBusy ? 'Sending…' : 'Keep me posted'}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
