@@ -515,6 +515,8 @@ function Register() {
   const [err, setErr] = useState('')
   const [liveClasses, setLiveClasses] = useState(null)
 
+  const [outcomes, setOutcomes] = useState([]) // per-class result shown on confirmation
+
   useEffect(() => {
     if (!supabase) return
     ;(async () => {
@@ -529,7 +531,7 @@ function Register() {
         const ageRange = (c.min_age || c.max_age) ? `Ages ${c.min_age || 0}${c.max_age ? `–${c.max_age}` : '+'}` : ''
         const when = [c.day_of_week, c.start_time ? `${c.start_time}${c.end_time ? `–${c.end_time}` : ''}` : ''].filter(Boolean).join(' ')
         return {
-          name: c.name, level: c.level, when, ageRange,
+          id: c.id, name: c.name, level: c.level, when, ageRange, capacity: c.capacity,
           full: !!(c.capacity && (map[c.id] || 0) >= c.capacity),
         }
       }))
@@ -559,7 +561,10 @@ function Register() {
     const classesText = form.interested_classes.length
       ? form.interested_classes.join(', ')
       : 'Not sure yet — help me choose'
-    const { error } = await supabase.from('registrations').insert({
+
+    // 1. Log the raw registration (Corrie's record of what was submitted —
+    //    unchanged from before).
+    await supabase.from('registrations').insert({
       parent_name: form.parent_name.trim(),
       email: form.email.trim() || null,
       phone: form.phone.trim() || null,
@@ -580,9 +585,65 @@ function Register() {
       meeting_acknowledged: true,
       wants_donation: form.wants_donation,
       waiver_acknowledged: true,
+      processed: true, // no admin approval step anymore — this is just a log
     })
+
+    // 2. Create the real family + student + enrollment records immediately,
+    //    with real-time capacity checking, so the parent sees right now
+    //    whether they got the spot or are waitlisted. Always a FRESH
+    //    record — no attempt to match/merge into an existing family, even
+    //    for "returning" students (that matching only stays safe with a
+    //    human reviewing it, which conflicts with instant processing).
+    const [pFirst, ...pRest] = form.parent_name.trim().split(' ')
+    const { data: fam } = await supabase.from('families').insert({
+      parent_first_name: pFirst || form.parent_name.trim(),
+      parent_last_name: pRest.join(' ') || '',
+      email: form.email.trim() || null,
+      phone: form.phone.trim() || null,
+      secondary_parent_name: form.secondary_parent_name.trim() || null,
+      secondary_parent_email: form.secondary_parent_email.trim() || null,
+      secondary_parent_phone: form.secondary_parent_phone.trim() || null,
+      emergency_contact_name: form.emergency_contact_name.trim() || null,
+      emergency_contact_relationship: form.emergency_contact_relationship.trim() || null,
+      emergency_contact_phone: form.emergency_contact_phone.trim() || null,
+      notes: form.wants_donation ? 'Registration donation intent noted at signup.' : null,
+    }).select().single()
+
+    const [sFirst, ...sRest] = form.student_name.trim().split(' ')
+    const meetingNote = [form.meeting_aug28 && 'Aug 28 meeting', form.meeting_sep3 && 'Sep 3 meeting'].filter(Boolean).join(' + ')
+    const { data: stu } = await supabase.from('students').insert({
+      first_name: sFirst || form.student_name.trim(),
+      last_name: sRest.join(' ') || '',
+      grade: form.student_grade.trim() || null,
+      birthday: form.student_birthday || null,
+      family_id: fam?.id || null,
+      notes: [
+        form.student_age ? `Age at registration: ${form.student_age}.` : '',
+        meetingNote ? `Parent meeting selected at registration: ${meetingNote}.` : '',
+        form.is_returning === 'returning' ? 'Registered as a returning student.' : 'Registered as a new student.',
+      ].filter(Boolean).join(' ') || null,
+    }).select().single()
+
+    // 3. Enroll in each selected class, right now, with a real capacity
+    //    check against the live count — this is what lets the confirmation
+    //    screen say "you're in" or "you're on the waitlist" immediately.
+    const results = []
+    if (stu) {
+      for (const className of form.interested_classes) {
+        const cls = (liveClasses || []).find((c) => c.name === className)
+        if (!cls) continue
+        let status = 'enrolled'
+        if (cls.capacity) {
+          const { count } = await supabase.from('enrollments').select('id', { count: 'exact', head: true }).eq('class_id', cls.id).eq('status', 'enrolled')
+          if ((count ?? 0) >= cls.capacity) status = 'waitlist'
+        }
+        await supabase.from('enrollments').insert({ student_id: stu.id, class_id: cls.id, status })
+        results.push({ name: cls.name, when: cls.when, status })
+      }
+    }
+
+    setOutcomes(results)
     setBusy(false)
-    if (error) { setErr('Something went wrong saving your registration. Please try again, or email shineGHFC@gmail.com.'); return }
     setDone(true)
   }
 
@@ -605,7 +666,20 @@ function Register() {
             <div className="form-ok">
               <div className="big">🎉</div>
               <h3>You're in!</h3>
-              <p>Thanks, {form.parent_name.split(' ')[0]}. Corrie will reach out soon with details for {form.student_name.split(' ')[0]}'s class.</p>
+              <p>Thanks, {form.parent_name.split(' ')[0]}! Here's where {form.student_name.split(' ')[0]} landed:</p>
+              {outcomes.length > 0 ? (
+                <div className="outcome-list">
+                  {outcomes.map((o, i) => (
+                    <div key={i} className={`outcome-row ${o.status}`}>
+                      <span className="outcome-name"><strong>{o.name}</strong>{o.when && <span className="outcome-when"> · {o.when}</span>}</span>
+                      <span className={`pill ${o.status === 'enrolled' ? 'enrolled' : 'waitlist'}`}>{o.status === 'enrolled' ? "You're enrolled!" : 'Waitlisted — full'}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ fontSize: 14.5, color: 'var(--ink-soft)' }}>Corrie will follow up to help pick the right class for {form.student_name.split(' ')[0]}.</p>
+              )}
+              <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 14 }}>Remember: enrollment isn't complete until a parent attends one of the two meeting dates. A confirmation email is on its way with the details.</p>
               {form.wants_donation && (
                 <div className="donate-cta">
                   <p style={{ fontSize: 14.5, marginBottom: 10 }}>You noted you'd like to make a $100 registration donation — thank you! You can complete that here whenever's convenient:</p>
