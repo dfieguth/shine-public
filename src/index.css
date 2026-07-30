@@ -239,3 +239,19 @@ footer{background:var(--pine-deep);color:#bcd4cb;padding:52px 24px 34px}
 .pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;white-space:nowrap}
 .pill.enrolled{background:#e6f4ec;color:#1f7a44}
 .pill.waitlist{background:#fdf1dd;color:#a3741f}
+
+/* ---------- Policies & Forms page ---------- */
+.policies-page{background:var(--cream);min-height:70vh;padding:120px 20px 60px}
+.policies-in{max-width:720px;margin:0 auto}
+.policies-back{display:inline-block;color:var(--pine);font-size:14px;font-weight:500;text-decoration:none;margin-bottom:18px}
+.policies-back:hover{text-decoration:underline}
+.policies-in h1{font-family:var(--font-display);font-size:clamp(28px,4vw,40px);color:var(--pine-dark);margin:6px 0 34px}
+.policies-loading{color:var(--ink-soft)}
+.policy-section{background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px 28px;margin-bottom:20px}
+.policy-section h2{font-family:var(--font-display);font-size:21px;color:var(--pine-dark);margin-bottom:12px}
+.policy-section p{font-size:15px;line-height:1.65;color:var(--ink);margin-bottom:12px}
+.policy-section p:last-child{margin-bottom:0}
+.policy-list{margin:0 0 12px 20px}
+.policy-list li{font-size:15px;line-height:1.65;color:var(--ink);margin-bottom:4px}
+.policies-contact{text-align:center;font-size:14.5px;color:var(--ink-soft);margin-top:28px}
+.policies-contact a{color:var(--pine);font-weight:500}

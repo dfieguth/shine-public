@@ -118,13 +118,14 @@ function Nav() {
     <>
       <nav className={`nav ${solid ? 'solid' : ''}`}>
         <div className="nav-in">
-          <a href="#top" className="logo">Shine<span>.</span></a>
+          <a href="/" className="logo">Shine<span>.</span></a>
           <div className="nav-links">
-            <a href="#classes">Classes</a>
-            <a href="#instructors">Our Team</a>
-            <a href="#gallery">Gallery</a>
+            <a href="/#classes">Classes</a>
+            <a href="/#instructors">Our Team</a>
+            <a href="/#gallery">Gallery</a>
+            <a href="/policies">Policies &amp; Forms</a>
             <button className="nav-text-btn" onClick={() => { setShowInterest(true); setIDone(false); setIErr('') }}>Just have questions?</button>
-            <a href="#register" className="nav-cta">Register</a>
+            <a href="/#register" className="nav-cta">Register</a>
           </div>
         </div>
       </nav>
@@ -179,14 +180,14 @@ function Hero() {
       <div className="hero-scrim" />
       <div className="hero-in">
         <span className="hero-eyebrow">Granada Heights Friends Church</span>
-        <h1>Every kid gets to <em>shine</em>.</h1>
+        <h1>Shining the <em>Light</em> of Jesus.</h1>
         <p className="hero-verse">"Let your light shine before others, that they may see your good deeds and glorify your Father in heaven." — Matthew 5:16</p>
         <p>Free classes for our community. Shining God's love to students and families.</p>
         <div className="hero-actions">
           <a href="#register" className="btn-primary">Register your dancer</a>
           <a href="#classes" className="btn-ghost">See the schedule</a>
         </div>
-        <div className="hero-badge">✦ <span><b>100% free</b>&nbsp;— no tuition, no costume fees, no catch.</span></div>
+        <div className="hero-badge">✦ <span>Shine runs on volunteers and donations. Classes are free, but a <b>$100 donation</b> is suggested per family at registration for those who are able.</span></div>
       </div>
     </header>
   )
@@ -448,7 +449,7 @@ function Testimonials() {
       <Reveal className="section">
         <div className="section-head">
           <span className="eyebrow">From Our Families</span>
-          <h2>What parents say</h2>
+          <h2>What families say</h2>
         </div>
         <div className="quote-grid">
           {quotes.map((q, i) => (
@@ -769,10 +770,10 @@ function Register() {
 
               <p className="form-section-label">Mandatory Parent Meeting</p>
               <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8 }}>I plan to attend the Mandatory Parent Meeting on:</p>
-              <label className="check"><input type="checkbox" checked={form.meeting_aug28} onChange={set('meeting_aug28')} /><span>Friday, August 28th, 6:00–7:00pm</span></label>
+              <label className="check"><input type="checkbox" checked={form.meeting_aug28} onChange={set('meeting_aug28')} /><span>Friday, August 28th, 6:00–7:00pm (Lindley Hall)</span></label>
               {/* Field name "meeting_sep3" is a historical internal key — the
                   actual date/time shown to parents is the source of truth below. */}
-              <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>Wednesday, September 2nd, 7:00–8:00pm</span></label>
+              <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>Wednesday, September 2nd, 7:00–8:00pm (Joy Hall)</span></label>
               <label className="check"><input type="checkbox" checked={form.meeting_acknowledged} onChange={set('meeting_acknowledged')} /><span>I understand my student's enrollment with Shine is <strong>NOT complete</strong> until a parent or guardian attends one of the above meeting dates.</span></label>
 
               <p className="form-section-label">Registration Donation</p>
@@ -811,8 +812,9 @@ function Footer() {
         </div>
         <div className="foot-col">
           <h4>Get started</h4>
-          <a href="#register">Register a dancer</a>
-          <a href="#classes">View classes</a>
+          <a href="/#register">Register a dancer</a>
+          <a href="/#classes">View classes</a>
+          <a href="/policies">Policies &amp; Forms</a>
           <a href="https://pushpay.com/g/ghfclamirada" target="_blank" rel="noreferrer">Give through GHFC</a>
         </div>
       </div>
@@ -821,7 +823,69 @@ function Footer() {
   )
 }
 
+// Renders plain text with blank-line paragraph breaks and "•" bullet lines
+// as a real list — matches what the admin's Policies editor produces
+// without needing a rich text editor.
+function PolicyBody({ text }) {
+  const blocks = text.split(/\n\s*\n/)
+  return (
+    <>
+      {blocks.map((block, i) => {
+        const lines = block.split('\n').filter((l) => l.trim())
+        const isList = lines.length > 0 && lines.every((l) => l.trim().startsWith('•'))
+        if (isList) {
+          return (
+            <ul key={i} className="policy-list">
+              {lines.map((l, j) => <li key={j}>{l.replace(/^•\s*/, '')}</li>)}
+            </ul>
+          )
+        }
+        return <p key={i}>{lines.join(' ')}</p>
+      })}
+    </>
+  )
+}
+
+function PoliciesPage() {
+  const [sections, setSections] = useState(null)
+  useEffect(() => {
+    if (!supabase) { setSections([]); return }
+    ;(async () => {
+      const { data } = await supabase.from('policy_sections').select('*').eq('active', true).order('sort_order')
+      setSections(data || [])
+    })()
+  }, [])
+  return (
+    <>
+      <Nav />
+      <div className="policies-page">
+        <div className="policies-in">
+          <a href="/" className="policies-back">← Back to Shine</a>
+          <span className="eyebrow">Policies &amp; Forms</span>
+          <h1>What to know before class starts</h1>
+          {sections === null ? (
+            <p className="policies-loading">Loading…</p>
+          ) : sections.length === 0 ? (
+            <p>Nothing posted yet — check back soon, or email Corrie at shineGHFC@gmail.com with any questions.</p>
+          ) : (
+            sections.map((s) => (
+              <section className="policy-section" key={s.id}>
+                <h2>{s.title}</h2>
+                <PolicyBody text={s.body} />
+              </section>
+            ))
+          )}
+          <p className="policies-contact">Questions about any of this? Email Corrie Villa at <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a>.</p>
+        </div>
+      </div>
+      <Footer />
+    </>
+  )
+}
+
 export default function App() {
+  const isPolicies = typeof window !== 'undefined' && window.location.pathname.replace(/\/$/, '') === '/policies'
+  if (isPolicies) return <PoliciesPage />
   return (
     <>
       <Nav />
