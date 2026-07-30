@@ -1,10 +1,11 @@
 /* Shine Dance Studio — public site
-   Warm, alive, trustworthy. Deep pine + brass, cream surfaces.
+   Navy + teal + mint, per Corrie'''s color reference (a navy/teal/mint
+   balloon photo). Cream surfaces kept as a warm neutral background.
    Motion is restrained: hero zoom, scroll fade-ups, card lifts. */
 
 :root{
-  --pine:#1f4d43; --pine-dark:#153a31; --pine-deep:#0f2a23;
-  --brass:#d99b3d; --brass-soft:#f0c579;
+  --pine:#1c2250; --pine-dark:#12162f; --pine-deep:#0a0c1c;
+  --brass:#2e9db5; --brass-soft:#8fd9c4;
   --cream:#faf6ec; --paper:#fffdf8;
   --ink:#25302c; --ink-soft:#5f6f68;
   --line:#e7e1d3;
