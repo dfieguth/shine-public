@@ -162,21 +162,41 @@ function Nav() {
 }
 
 function Hero() {
-  const [photo, setPhoto] = useState(heroPhoto)
+  // Loads the real hero photo before ever showing it, instead of showing
+  // one photo then swapping to another a moment later — that swap was the
+  // "flash" Corrie flagged (happens on first load, and again every time
+  // someone navigates back from /policies, since that's a full page
+  // reload). A solid navy gradient shows until the real photo is
+  // confirmed ready, then it fades in — never shows something wrong.
+  const [photo, setPhoto] = useState(null)
+  const [ready, setReady] = useState(false)
   useEffect(() => {
-    if (!supabase) return
-    ;(async () => {
-      const { data } = await supabase.storage.from(BUCKET).list('', { limit: 100 })
-      const hero = (data || []).find((f) => f.name === 'hero.jpg')
-      if (hero) {
-        const url = supabase.storage.from(BUCKET).getPublicUrl('hero.jpg').data.publicUrl
-        setPhoto(url + '?v=' + Date.parse(hero.updated_at || hero.created_at || Date.now()))
-      }
-    })()
+    let cancelled = false
+    async function resolveUrl() {
+      if (!supabase) return heroPhoto
+      try {
+        const { data } = await supabase.storage.from(BUCKET).list('', { limit: 100 })
+        const hero = (data || []).find((f) => f.name === 'hero.jpg')
+        if (hero) {
+          const url = supabase.storage.from(BUCKET).getPublicUrl('hero.jpg').data.publicUrl
+          return url + '?v=' + Date.parse(hero.updated_at || hero.created_at || Date.now())
+        }
+      } catch (_e) { /* fall through to bundled default */ }
+      return heroPhoto
+    }
+    resolveUrl().then((url) => {
+      const img = new Image()
+      img.onload = () => { if (!cancelled) { setPhoto(url); setReady(true) } }
+      img.onerror = () => { if (!cancelled) { setPhoto(heroPhoto); setReady(true) } }
+      img.src = url
+    })
+    return () => { cancelled = true }
   }, [])
   return (
     <header className="hero" id="top">
-      <div className="hero-bg" style={{ backgroundImage: `url(${photo})` }} />
+      <div className="hero-bg">
+        <div className={`hero-photo ${ready ? 'is-ready' : ''}`} style={photo ? { backgroundImage: `url(${photo})` } : undefined} />
+      </div>
       <div className="hero-scrim" />
       <div className="hero-in">
         <span className="hero-eyebrow">Granada Heights Friends Church</span>
@@ -198,8 +218,8 @@ function Mission() {
     <section className="mission">
       <div className="section">
         <span className="eyebrow">Why Shine</span>
-        <h2>Free dance classes for our community, <em>where every kid gets to shine</em>.</h2>
-        <p>Shine Dance Studio is a ministry of Granada Heights Friends Church. We're excited to offer free dance classes to children and youth in our community, at a variety of levels from beginning to intermediate, starting at age 5. No dance experience is needed to jump in!</p>
+        <h2>Free dance classes for our community, <em>connecting students with Christ</em>.</h2>
+        <p>Shine Dance Studio is a ministry of Granada Heights Friends Church. We're excited to offer free dance classes to children and youth in our community, at a variety of levels from beginning to advanced, starting at age 5. No dance experience is needed to jump in!</p>
         <div className="mission-points">
           <div className="chip"><b>✦</b> Always free</div>
           <div className="chip"><b>✦</b> Ages 5 and up</div>
@@ -472,7 +492,7 @@ function Gallery() {
   useEffect(() => {
     if (!supabase) return
     ;(async () => {
-      const { data } = await supabase.storage.from(BUCKET).list('gallery', { limit: 24 })
+      const { data } = await supabase.storage.from(BUCKET).list('gallery', { limit: 100 })
       setPhotos((data || []).filter((f) => f.name !== '.emptyFolderPlaceholder').map((f) =>
         supabase.storage.from(BUCKET).getPublicUrl('gallery/' + f.name).data.publicUrl
       ))
