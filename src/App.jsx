@@ -635,6 +635,9 @@ function Register() {
     if (!form.student_grade.trim()) { setErr('Please add your dancer\'s grade.'); return }
     if (!form.student_age.trim()) { setErr('Please add your dancer\'s age.'); return }
     if (!form.student_birthday) { setErr('Please add your dancer\'s birthday.'); return }
+    if (!form.emergency_contact_name.trim()) { setErr('Please add an emergency contact name.'); return }
+    if (!form.emergency_contact_relationship.trim()) { setErr('Please add the emergency contact\'s relationship to your dancer.'); return }
+    if (!form.emergency_contact_phone.trim()) { setErr('Please add an emergency contact phone number.'); return }
     if (!form.interested_classes.length && !form.not_sure) { setErr('Please select at least one class, or check "I\'m not sure — please contact me."'); return }
     if (!form.heard_about) { setErr('Please let us know how you heard about us.'); return }
     if (form.heard_about === 'Other' && !form.heard_about_other.trim()) { setErr('Please tell us a bit more in the "how did you hear about us" box.'); return }
@@ -699,7 +702,7 @@ function Register() {
     //    for "returning" students (that matching only stays safe with a
     //    human reviewing it, which conflicts with instant processing).
     const [pFirst, ...pRest] = form.parent_name.trim().split(' ')
-    const { data: fam } = await supabase.from('families').insert({
+    const { data: fam, error: famErr } = await supabase.from('families').insert({
       parent_first_name: pFirst || form.parent_name.trim(),
       parent_last_name: pRest.join(' ') || '',
       email: form.email.trim() || null,
@@ -712,10 +715,11 @@ function Register() {
       emergency_contact_phone: form.emergency_contact_phone.trim() || null,
       notes: form.wants_donation ? 'Registration donation intent noted at signup.' : null,
     }).select().single()
+    if (famErr) console.error('Registration: family insert failed —', famErr)
 
     const [sFirst, ...sRest] = form.student_name.trim().split(' ')
     const meetingNote = [form.meeting_aug28 && 'Aug 28 meeting', form.meeting_sep3 && 'Sep 3 meeting'].filter(Boolean).join(' + ')
-    const { data: stu } = await supabase.from('students').insert({
+    const { data: stu, error: stuErr } = await supabase.from('students').insert({
       first_name: sFirst || form.student_name.trim(),
       last_name: sRest.join(' ') || '',
       grade: form.student_grade.trim() || null,
@@ -732,10 +736,14 @@ function Register() {
         form.is_returning === 'returning' ? 'Registered as a returning student.' : 'Registered as a new student.',
       ].filter(Boolean).join(' ') || null,
     }).select().single()
+    if (stuErr) console.error('Registration: student insert failed —', stuErr)
 
     // 3. Enroll in each matched class, right now, with a real capacity
     //    check against the live count — this is what lets the confirmation
     //    screen say "you're in" or "you're on the waitlist" immediately.
+    //    Each insert's error is checked — a failed enrollment now shows up
+    //    honestly as an error in the results, instead of silently reporting
+    //    "enrolled" while nothing was actually written to the database.
     const results = []
     if (stu) {
       for (const cls of matchedClasses) {
@@ -744,9 +752,16 @@ function Register() {
           const { count } = await supabase.from('enrollments').select('id', { count: 'exact', head: true }).eq('class_id', cls.id).eq('status', 'enrolled')
           if ((count ?? 0) >= cls.capacity) status = 'waitlist'
         }
-        await supabase.from('enrollments').insert({ student_id: stu.id, class_id: cls.id, status })
-        results.push({ name: cls.name, when: cls.when, status })
+        const { error: enrollErr } = await supabase.from('enrollments').insert({ student_id: stu.id, class_id: cls.id, status })
+        if (enrollErr) {
+          console.error('Registration: enrollment insert failed —', cls.name, enrollErr)
+          results.push({ name: cls.name, when: cls.when, status: 'error' })
+        } else {
+          results.push({ name: cls.name, when: cls.when, status })
+        }
       }
+    } else {
+      setErr('Something went wrong saving your registration. Please email Corrie directly at shineGHFC@gmail.com so she can add your dancer by hand — sorry for the hassle.')
     }
 
     // 4. Send the two registration emails (internal alert to Corrie, and
@@ -807,7 +822,9 @@ function Register() {
                   {outcomes.map((o, i) => (
                     <div key={i} className={`outcome-row ${o.status}`}>
                       <span className="outcome-name"><strong>{o.name}</strong>{o.when && <span className="outcome-when"> · {o.when}</span>}</span>
-                      <span className={`pill ${o.status === 'enrolled' ? 'enrolled' : 'waitlist'}`}>{o.status === 'enrolled' ? "You're enrolled!" : 'Waitlisted — full'}</span>
+                      <span className={`pill ${o.status === 'enrolled' ? 'enrolled' : o.status === 'error' ? 'danger' : 'waitlist'}`}>
+                        {o.status === 'enrolled' ? "You're enrolled!" : o.status === 'error' ? "Couldn't save — Corrie will follow up" : 'Waitlisted — full'}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -869,12 +886,12 @@ function Register() {
 
               <p className="form-section-label">Emergency Contact (other than a parent)</p>
               <div className="fg2">
-                <div className="fg"><label>Name</label><input type="text" value={form.emergency_contact_name} onChange={set('emergency_contact_name')} /></div>
-                <div className="fg"><label>Relationship</label><input type="text" placeholder="e.g. Grandparent, neighbor" value={form.emergency_contact_relationship} onChange={set('emergency_contact_relationship')} /></div>
+                <div className="fg"><label>Name *</label><input type="text" value={form.emergency_contact_name} onChange={set('emergency_contact_name')} required /></div>
+                <div className="fg"><label>Relationship *</label><input type="text" placeholder="e.g. Grandparent, neighbor" value={form.emergency_contact_relationship} onChange={set('emergency_contact_relationship')} required /></div>
               </div>
               <div className="fg">
-                <label>Phone</label>
-                <input type="tel" value={form.emergency_contact_phone} onChange={set('emergency_contact_phone')} />
+                <label>Phone *</label>
+                <input type="tel" value={form.emergency_contact_phone} onChange={set('emergency_contact_phone')} required />
               </div>
 
               <p className="form-section-label">Dancer</p>

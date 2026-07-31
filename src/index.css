@@ -237,11 +237,13 @@ footer{background:var(--pine-deep);color:#bcd4cb;padding:52px 24px 34px}
 .outcome-list{margin:16px 0;display:flex;flex-direction:column;gap:8px}
 .outcome-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;text-align:left}
 .outcome-row.waitlist{background:#fdf9f0}
+.outcome-row.error{background:#fdecec;border-color:#f3c9c9}
 .outcome-name{font-size:14.5px}
 .outcome-when{color:var(--ink-soft);font-weight:400}
 .pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;white-space:nowrap}
 .pill.enrolled{background:#e6f4ec;color:#1f7a44}
 .pill.waitlist{background:#fdf1dd;color:#a3741f}
+.pill.danger{background:#fdecec;color:#b23838}
 
 /* ---------- Policies & Forms page ---------- */
 .policies-page{background:var(--cream);min-height:70vh;padding:120px 20px 60px}
