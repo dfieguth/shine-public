@@ -703,7 +703,19 @@ function Register() {
     //    for "returning" students (that matching only stays safe with a
     //    human reviewing it, which conflicts with instant processing).
     const [pFirst, ...pRest] = form.parent_name.trim().split(' ')
-    const { data: fam, error: famErr } = await supabase.from('families').insert({
+    // Generating the ID here, instead of letting the database hand one
+    // back, is the actual fix for the 401 errors. supabase.insert(...).
+    // select() asks PostgREST to read the row back after inserting it —
+    // which requires SELECT permission on the table. Public visitors were
+    // deliberately never given SELECT on families/students (correctly —
+    // nobody should be able to read another family's data), so that
+    // read-back was always going to fail. This was true from the very
+    // start of this project, not something introduced recently. Generating
+    // the id ourselves means the insert never needs to ask for anything
+    // back at all.
+    const famId = crypto.randomUUID()
+    const { error: famErr } = await supabase.from('families').insert({
+      id: famId,
       parent_first_name: pFirst || form.parent_name.trim(),
       parent_last_name: pRest.join(' ') || '',
       email: form.email.trim() || null,
@@ -715,12 +727,15 @@ function Register() {
       emergency_contact_relationship: form.emergency_contact_relationship.trim() || null,
       emergency_contact_phone: form.emergency_contact_phone.trim() || null,
       notes: form.wants_donation ? 'Registration donation intent noted at signup.' : null,
-    }).select().single()
+    })
+    const fam = famErr ? null : { id: famId }
     if (famErr) console.error('Registration: family insert failed —', famErr)
 
     const [sFirst, ...sRest] = form.student_name.trim().split(' ')
     const meetingNote = [form.meeting_aug28 && 'Aug 28 meeting', form.meeting_sep3 && 'Sep 3 meeting'].filter(Boolean).join(' + ')
-    const { data: stu, error: stuErr } = await supabase.from('students').insert({
+    const stuId = crypto.randomUUID()
+    const { error: stuErr } = await supabase.from('students').insert({
+      id: stuId,
       first_name: sFirst || form.student_name.trim(),
       last_name: sRest.join(' ') || '',
       grade: form.student_grade.trim() || null,
@@ -736,7 +751,8 @@ function Register() {
         meetingNote ? `Parent meeting selected at registration: ${meetingNote}.` : '',
         form.is_returning === 'returning' ? 'Registered as a returning student.' : 'Registered as a new student.',
       ].filter(Boolean).join(' ') || null,
-    }).select().single()
+    })
+    const stu = stuErr ? null : { id: stuId }
     if (stuErr) console.error('Registration: student insert failed —', stuErr)
 
     // 3. Enroll in each matched class, right now, with a real capacity
