@@ -689,7 +689,8 @@ function Register() {
       waiver_acknowledged: true,
       processed: true, // no admin approval step anymore — this is just a log
     }
-    await supabase.from('registrations').insert(regRow)
+    const { error: regErr } = await supabase.from('registrations').insert(regRow)
+    if (regErr) console.error('Registration: registrations log insert failed —', regErr)
 
     // (The registration emails are sent further down, after enrollment,
     //  so the parent's confirmation can state real enrolled/waitlist
@@ -761,7 +762,15 @@ function Register() {
         }
       }
     } else {
-      setErr('Something went wrong saving your registration. Please email Corrie directly at shineGHFC@gmail.com so she can add your dancer by hand — sorry for the hassle.')
+      // Hard failure: no student record means there is nothing to enroll and
+      // nothing for Corrie to work with. Do NOT show the success screen or
+      // send a "You're in!" email — that's what made this bug invisible
+      // before. The raw registration IS still logged above, so Corrie can
+      // see the attempt in Admin -> Registrations and add them by hand.
+      console.error('Registration: no student record was created — aborting before confirmation.')
+      setErr('Something went wrong saving your registration, and your dancer was NOT added. Please email Corrie directly at shineGHFC@gmail.com so she can add your dancer by hand. Sorry for the hassle!')
+      setBusy(false)
+      return
     }
 
     // 4. Send the two registration emails (internal alert to Corrie, and
