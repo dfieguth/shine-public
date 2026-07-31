@@ -584,8 +584,11 @@ function Register() {
       : 'Not sure yet — help me choose'
 
     // 1. Log the raw registration (Corrie's record of what was submitted —
-    //    unchanged from before).
-    await supabase.from('registrations').insert({
+    //    unchanged from before). Built as a plain object first so the same
+    //    data can be sent straight to the email function below — public
+    //    visitors can INSERT into registrations but can't read rows back,
+    //    so we don't rely on Supabase handing the row back to us.
+    const regRow = {
       parent_name: form.parent_name.trim(),
       email: form.email.trim() || null,
       phone: form.phone.trim() || null,
@@ -607,7 +610,17 @@ function Register() {
       wants_donation: form.wants_donation,
       waiver_acknowledged: true,
       processed: true, // no admin approval step anymore — this is just a log
-    })
+    }
+    await supabase.from('registrations').insert(regRow)
+
+    // 1b. Send the registration emails by calling the function directly,
+    //     instead of relying on the database webhook to trigger it. The
+    //     webhook was confirmed not firing at all (zero invocations in
+    //     logs), so this removes that dependency entirely. Wrapped so an
+    //     email hiccup never blocks the actual registration from completing.
+    try {
+      await supabase.functions.invoke('notify-registration', { body: { record: regRow } })
+    } catch (_e) { /* registration itself still succeeds even if the email call fails */ }
 
     // 2. Create the real family + student + enrollment records immediately,
     //    with real-time capacity checking, so the parent sees right now
@@ -630,6 +643,15 @@ function Register() {
       notes: form.wants_donation ? 'Registration donation intent noted at signup.' : null,
     }).select().single()
 
+    // Resolve which of the selected class names are real, live classes
+    // BEFORE creating the student. This decides whether the student should
+    // land Active or Inactive right at insert time. The public site only
+    // has INSERT access to `students` (no UPDATE), so this has to be
+    // decided up front, not fixed with a follow-up update call.
+    const matchedClasses = form.interested_classes
+      .map((className) => (liveClasses || []).find((c) => c.name === className))
+      .filter(Boolean)
+
     const [sFirst, ...sRest] = form.student_name.trim().split(' ')
     const meetingNote = [form.meeting_aug28 && 'Aug 28 meeting', form.meeting_sep3 && 'Sep 3 meeting'].filter(Boolean).join(' + ')
     const { data: stu } = await supabase.from('students').insert({
@@ -638,6 +660,11 @@ function Register() {
       grade: form.student_grade.trim() || null,
       birthday: form.student_birthday || null,
       family_id: fam?.id || null,
+      // Active if they matched at least one real class (so they show up on
+      // the default Students view right away). Inactive if they picked
+      // "Not sure yet" or nothing matched a live class, so Corrie still
+      // knows to follow up via the Inactive filter or the Registrations log.
+      season_status: matchedClasses.length ? 'active' : 'inactive',
       notes: [
         form.student_age ? `Age at registration: ${form.student_age}.` : '',
         meetingNote ? `Parent meeting selected at registration: ${meetingNote}.` : '',
@@ -645,14 +672,12 @@ function Register() {
       ].filter(Boolean).join(' ') || null,
     }).select().single()
 
-    // 3. Enroll in each selected class, right now, with a real capacity
+    // 3. Enroll in each matched class, right now, with a real capacity
     //    check against the live count — this is what lets the confirmation
     //    screen say "you're in" or "you're on the waitlist" immediately.
     const results = []
     if (stu) {
-      for (const className of form.interested_classes) {
-        const cls = (liveClasses || []).find((c) => c.name === className)
-        if (!cls) continue
+      for (const cls of matchedClasses) {
         let status = 'enrolled'
         if (cls.capacity) {
           const { count } = await supabase.from('enrollments').select('id', { count: 'exact', head: true }).eq('class_id', cls.id).eq('status', 'enrolled')
