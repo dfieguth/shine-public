@@ -89,6 +89,7 @@ export const handler = async (event) => {
       str(r.student_grade) ? `Grade: ${str(r.student_grade)}` : null,
       str(r.student_age) ? `Age: ${str(r.student_age)}` : null,
       r.is_returning ? 'Returning student' : 'New student',
+      str(r.heard_about) ? `Heard about us: ${str(r.heard_about)}` : null,
       '',
       'Classes:',
       ...classLines.map((l) => `  • ${l}`),
