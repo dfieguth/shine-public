@@ -613,14 +613,9 @@ function Register() {
     }
     await supabase.from('registrations').insert(regRow)
 
-    // 1b. Send the registration emails by calling the function directly,
-    //     instead of relying on the database webhook to trigger it. The
-    //     webhook was confirmed not firing at all (zero invocations in
-    //     logs), so this removes that dependency entirely. Wrapped so an
-    //     email hiccup never blocks the actual registration from completing.
-    try {
-      await supabase.functions.invoke('notify-registration', { body: { record: regRow } })
-    } catch (_e) { /* registration itself still succeeds even if the email call fails */ }
+    // (The registration emails are sent further down, after enrollment,
+    //  so the parent's confirmation can state real enrolled/waitlist
+    //  outcomes per class instead of just listing what they asked for.)
 
     // 2. Create the real family + student + enrollment records immediately,
     //    with real-time capacity checking, so the parent sees right now
@@ -687,6 +682,27 @@ function Register() {
         results.push({ name: cls.name, when: cls.when, status })
       }
     }
+
+    // 4. Send the two registration emails (internal alert to Corrie, and
+    //    the parent confirmation). This calls a Netlify Function, not a
+    //    Supabase Edge Function and not a database webhook:
+    //      - The database webhook could not be created at all (Supabase
+    //        platform error: schema "supabase_functions" does not exist).
+    //      - Supabase Edge Functions block outbound SMTP ports, so Gmail
+    //        sending could never work from there regardless.
+    //    Netlify does not block those ports, so this is where it works.
+    //
+    //    Deliberately wrapped and deliberately last: if email fails for
+    //    any reason, the family's registration and enrollment have ALREADY
+    //    completed successfully above, and they still see their real
+    //    confirmation screen. Email trouble must never cost someone a spot.
+    try {
+      await fetch('/.netlify/functions/notify-registration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record: regRow, outcomes: results }),
+      })
+    } catch { /* registration already succeeded — nothing to undo */ }
 
     setOutcomes(results)
     setBusy(false)
