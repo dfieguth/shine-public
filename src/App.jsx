@@ -47,6 +47,29 @@ const CLASS_OPTIONS = [
   'Tap III (ages 10+)',
 ]
 
+// Fetches admin-editable copy from the `site_content` table (Admin → Site
+// Content). Pass in the defaults for exactly the keys this component needs;
+// if the table is empty, unreachable, or missing a key, the default is used
+// instead — nothing on the live site can break from this, it can only get
+// overridden once Corrie deliberately edits something.
+function useSiteContent(defaults) {
+  const [content, setContent] = useState(defaults)
+  useEffect(() => {
+    if (!supabase) return
+    (async () => {
+      const { data } = await supabase.from('site_content').select('key, value').in('key', Object.keys(defaults))
+      if (data && data.length) {
+        setContent((c) => {
+          const merged = { ...c }
+          for (const row of data) if (row.value) merged[row.key] = row.value
+          return merged
+        })
+      }
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- defaults is a fresh object each render by design; only fetch once on mount
+  return content
+}
+
 const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const BUCKET = 'site-photos'
 
@@ -192,6 +215,12 @@ function Hero() {
     })
     return () => { cancelled = true }
   }, [])
+  const sc = useSiteContent({
+    hero_headline: 'Shining the Light of Jesus.',
+    hero_subtext: 'Free classes for our community. Shining God\u2019s love to students and families.',
+    hero_verse: '"Let your light shine before others, that they may see your good deeds and glorify your Father in heaven." — Matthew 5:16',
+    donation_badge: 'Shine runs on volunteers and donations. Classes are free, but a $100 donation is suggested per family at registration for those who are able.',
+  })
   return (
     <header className="hero" id="top">
       <div className="hero-bg">
@@ -200,30 +229,35 @@ function Hero() {
       <div className="hero-scrim" />
       <div className="hero-in">
         <span className="hero-eyebrow">Granada Heights Friends Church</span>
-        <h1>Shining the <em>Light</em> of Jesus.</h1>
-        <p className="hero-verse">"Let your light shine before others, that they may see your good deeds and glorify your Father in heaven." — Matthew 5:16</p>
-        <p>Free classes for our community. Shining God's love to students and families.</p>
+        <h1>{sc.hero_headline}</h1>
+        <p className="hero-verse">{sc.hero_verse}</p>
+        <p>{sc.hero_subtext}</p>
         <div className="hero-actions">
           <a href="#register" className="btn-primary">Register your dancer</a>
           <a href="#classes" className="btn-ghost">See the schedule</a>
         </div>
-        <div className="hero-badge">✦ <span>Shine runs on volunteers and donations. Classes are free, but a <b>$100 donation</b> is suggested per family at registration for those who are able.</span></div>
+        <div className="hero-badge">✦ <span>{sc.donation_badge}</span></div>
       </div>
     </header>
   )
 }
 
 function Mission() {
+  const sc = useSiteContent({
+    mission_headline: 'Free dance classes for our community, connecting students with Christ.',
+    mission_body: 'Shine Dance Studio is a ministry of Granada Heights Friends Church. We\u2019re excited to offer free dance classes to children and youth in our community, at a variety of levels from beginning to advanced, starting at age 5. No dance experience is needed to jump in!',
+    mission_chip_level: 'Beginning to advanced',
+  })
   return (
     <section className="mission">
       <div className="section">
         <span className="eyebrow">Why Shine</span>
-        <h2>Free dance classes for our community, <em>connecting students with Christ</em>.</h2>
-        <p>Shine Dance Studio is a ministry of Granada Heights Friends Church. We're excited to offer free dance classes to children and youth in our community, at a variety of levels from beginning to advanced, starting at age 5. No dance experience is needed to jump in!</p>
+        <h2>{sc.mission_headline}</h2>
+        <p>{sc.mission_body}</p>
         <div className="mission-points">
           <div className="chip"><b>✦</b> Always free</div>
           <div className="chip"><b>✦</b> Ages 5 and up</div>
-          <div className="chip"><b>✦</b> Beginning to intermediate</div>
+          <div className="chip"><b>✦</b> {sc.mission_chip_level}</div>
           <div className="chip"><b>✦</b> No experience needed</div>
         </div>
       </div>
@@ -539,6 +573,13 @@ const HEARD_ABOUT_OPTIONS = [
 ]
 
 function Register() {
+  const sc = useSiteContent({
+    registration_intro: 'Fill this out to sign up or to be added to a waiting list, and Corrie will reach out with your dancer\u2019s class details. It takes about five minutes.',
+    meeting_aug28_label: 'Friday, August 28th, 6:00–7:00pm (Lindley Hall)',
+    meeting_sep3_label: 'Wednesday, September 2nd, 7:00–8:00pm (Joy Hall)',
+    not_sure_label: 'I\u2019m not sure — please contact me to help pick the right class.',
+    class_select_label: 'Please select your class(es) for enrollment.',
+  })
   const [form, setForm] = useState(BLANK_FORM)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
@@ -725,7 +766,14 @@ function Register() {
       await fetch('/.netlify/functions/notify-registration', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ record: regRow, outcomes: results }),
+        body: JSON.stringify({
+          record: regRow,
+          outcomes: results,
+          // Whatever the parent actually saw on screen (from Site Content),
+          // not a second hardcoded copy that could drift out of sync — this
+          // is the fix for the wrong-meeting-date bug from last round.
+          meeting_labels: { aug28: sc.meeting_aug28_label, sep3: sc.meeting_sep3_label },
+        }),
       })
     } catch { /* registration already succeeded — nothing to undo */ }
 
@@ -740,7 +788,7 @@ function Register() {
         <div>
           <span className="eyebrow">Registration</span>
           <h2>Ready to join us?</h2>
-          <p className="lead">Fill this out to sign up or to be added to a waiting list, and Corrie will reach out with your dancer's class details. It takes about five minutes.</p>
+          <p className="lead">{sc.registration_intro}</p>
           <ul className="reg-perks">
             <li><span className="dot">✓</span> Completely free — always</li>
             <li><span className="dot">✓</span> No dance experience required</li>
@@ -849,7 +897,7 @@ function Register() {
                 )}
               </div>
               <div className="fg">
-                <label>Please select your class(es) for enrollment. *</label>
+                <label>{sc.class_select_label} *</label>
                 <div className="class-check-list">
                   {liveClasses
                     ? liveClasses.map((c) => (
@@ -874,16 +922,18 @@ function Register() {
                     checked={form.not_sure}
                     onChange={(e) => setForm((f) => ({ ...f, not_sure: e.target.checked, interested_classes: e.target.checked ? [] : f.interested_classes }))}
                   />
-                  <span>I'm not sure — please contact me to help pick the right class.</span>
+                  <span>{sc.not_sure_label}</span>
                 </label>
               </div>
 
               <p className="form-section-label">Mandatory Parent Meeting</p>
               <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8 }}>I plan to attend the Mandatory Parent Meeting on:</p>
-              <label className="check"><input type="checkbox" checked={form.meeting_aug28} onChange={set('meeting_aug28')} /><span>Friday, August 28th, 6:00–7:00pm (Lindley Hall)</span></label>
+              <label className="check"><input type="checkbox" checked={form.meeting_aug28} onChange={set('meeting_aug28')} /><span>{sc.meeting_aug28_label}</span></label>
               {/* Field name "meeting_sep3" is a historical internal key — the
-                  actual date/time shown to parents is the source of truth below. */}
-              <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>Wednesday, September 2nd, 7:00–8:00pm (Joy Hall)</span></label>
+                  actual date/time shown to parents is sc.meeting_sep3_label,
+                  edited via Admin → Site Content. Do not rename this field
+                  to match the label; the label is what's meant to change. */}
+              <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>{sc.meeting_sep3_label}</span></label>
               <label className="check"><input type="checkbox" checked={form.meeting_acknowledged} onChange={set('meeting_acknowledged')} /><span>I understand my student's enrollment with Shine is <strong>NOT complete</strong> until a parent or guardian attends one of the above meeting dates.</span></label>
 
               <p className="form-section-label">Registration Donation</p>
