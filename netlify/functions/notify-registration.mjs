@@ -48,7 +48,7 @@ export const handler = async (event) => {
   const classLines = outcomes.length
     ? outcomes.map((o) => {
         const when = str(o.when) ? ` · ${str(o.when)}` : ''
-        const status = o.status === 'waitlist' ? 'Waitlisted (class is full)' : "You're enrolled!"
+        const status = o.status === 'error' ? '⚠️ COULD NOT SAVE — needs manual follow-up' : o.status === 'waitlist' ? 'Waitlisted (class is full)' : "You're enrolled!"
         return `${str(o.name)}${when} — ${status}`
       })
     : (str(r.interested_class) ? [str(r.interested_class)] : ['No classes selected yet'])
