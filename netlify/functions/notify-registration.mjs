@@ -53,15 +53,13 @@ export const handler = async (event) => {
       })
     : (str(r.interested_class) ? [str(r.interested_class)] : ['No classes selected yet'])
 
-  // These two strings must match the registration form's checkbox labels
-  // WORD FOR WORD (shine-public/src/App.jsx, the Mandatory Parent Meeting
-  // section). Parents are removed from the roster if they miss the meeting,
-  // so a wrong day or room here has real consequences. Note the second
-  // field is named "sep3" for historical reasons but the actual meeting is
-  // September 2nd — do not "correct" the label to match the field name.
+  // Meeting labels come from the frontend, which reads them live from
+  // Admin -> Site Content — this is the single source of truth now. Falling
+  // back to these hardcoded defaults only if an older frontend build ever
+  // calls this function without them, so this never breaks outright.
   const MEETINGS = {
-    aug28: 'Friday, August 28th, 6:00–7:00pm (Lindley Hall)',
-    sep3: 'Wednesday, September 2nd, 7:00–8:00pm (Joy Hall)',
+    aug28: str(body.meeting_labels?.aug28) || 'Friday, August 28th, 6:00–7:00pm (Lindley Hall)',
+    sep3: str(body.meeting_labels?.sep3) || 'Wednesday, September 2nd, 7:00–8:00pm (Joy Hall)',
   }
 
   const meetings = [r.meeting_aug28 && MEETINGS.aug28, r.meeting_sep3 && MEETINGS.sep3]
