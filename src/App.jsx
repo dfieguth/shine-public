@@ -553,8 +553,8 @@ function Gallery() {
 
 const BLANK_FORM = {
   is_returning: '', // '' | 'new' | 'returning'
-  parent_name: '', email: '', phone: '',
-  student_name: '', student_grade: '', student_age: '', student_birthday: '',
+  parent_first_name: '', parent_last_name: '', email: '', phone: '',
+  student_first_name: '', student_last_name: '', student_grade: '', student_age: '', student_birthday: '',
   secondary_parent_name: '', secondary_parent_email: '', secondary_parent_phone: '',
   emergency_contact_name: '', emergency_contact_relationship: '', emergency_contact_phone: '',
   interested_classes: [], not_sure: false,
@@ -628,10 +628,12 @@ function Register() {
   async function submit() {
     setErr('')
     if (!form.is_returning) { setErr('Please let us know if your dancer is new to Shine or returning.'); return }
-    if (!form.parent_name.trim()) { setErr('Please add your name.'); return }
+    if (!form.parent_first_name.trim()) { setErr('Please add your first name.'); return }
+    if (!form.parent_last_name.trim()) { setErr('Please add your last name.'); return }
     if (!form.email.trim()) { setErr('Please add your email address.'); return }
     if (!form.phone.trim()) { setErr('Please add your phone number.'); return }
-    if (!form.student_name.trim()) { setErr('Please add your dancer\'s name.'); return }
+    if (!form.student_first_name.trim()) { setErr('Please add your dancer\'s first name.'); return }
+    if (!form.student_last_name.trim()) { setErr('Please add your dancer\'s last name.'); return }
     if (!form.student_grade.trim()) { setErr('Please add your dancer\'s grade.'); return }
     if (!form.student_age.trim()) { setErr('Please add your dancer\'s age.'); return }
     if (!form.student_birthday) { setErr('Please add your dancer\'s birthday.'); return }
@@ -666,10 +668,10 @@ function Register() {
     //    visitors can INSERT into registrations but can't read rows back,
     //    so we don't rely on Supabase handing the row back to us.
     const regRow = {
-      parent_name: form.parent_name.trim(),
+      parent_name: `${form.parent_first_name.trim()} ${form.parent_last_name.trim()}`.trim(),
       email: form.email.trim() || null,
       phone: form.phone.trim() || null,
-      student_name: form.student_name.trim(),
+      student_name: `${form.student_first_name.trim()} ${form.student_last_name.trim()}`.trim(),
       student_grade: form.student_grade.trim() || null,
       student_age: form.student_age.trim() || null,
       student_birthday: form.student_birthday || null,
@@ -702,22 +704,17 @@ function Register() {
     //    record — no attempt to match/merge into an existing family, even
     //    for "returning" students (that matching only stays safe with a
     //    human reviewing it, which conflicts with instant processing).
-    const [pFirst, ...pRest] = form.parent_name.trim().split(' ')
-    // Generating the ID here, instead of letting the database hand one
-    // back, is the actual fix for the 401 errors. supabase.insert(...).
-    // select() asks PostgREST to read the row back after inserting it —
-    // which requires SELECT permission on the table. Public visitors were
-    // deliberately never given SELECT on families/students (correctly —
-    // nobody should be able to read another family's data), so that
-    // read-back was always going to fail. This was true from the very
-    // start of this project, not something introduced recently. Generating
-    // the id ourselves means the insert never needs to ask for anything
-    // back at all.
+    // Generating the id here, instead of letting the database hand one
+    // back, is the fix for the 401 errors from last round: supabase.insert
+    // (...).select() asks PostgREST to read the row back after inserting,
+    // which requires SELECT permission the public was deliberately never
+    // given. Generating the id ourselves means the insert never needs to
+    // ask for anything back at all.
     const famId = crypto.randomUUID()
     const { error: famErr } = await supabase.from('families').insert({
       id: famId,
-      parent_first_name: pFirst || form.parent_name.trim(),
-      parent_last_name: pRest.join(' ') || '',
+      parent_first_name: form.parent_first_name.trim(),
+      parent_last_name: form.parent_last_name.trim(),
       email: form.email.trim() || null,
       phone: form.phone.trim() || null,
       secondary_parent_name: form.secondary_parent_name.trim() || null,
@@ -731,13 +728,12 @@ function Register() {
     const fam = famErr ? null : { id: famId }
     if (famErr) console.error('Registration: family insert failed —', famErr)
 
-    const [sFirst, ...sRest] = form.student_name.trim().split(' ')
     const meetingNote = [form.meeting_aug28 && 'Aug 28 meeting', form.meeting_sep3 && 'Sep 3 meeting'].filter(Boolean).join(' + ')
     const stuId = crypto.randomUUID()
     const { error: stuErr } = await supabase.from('students').insert({
       id: stuId,
-      first_name: sFirst || form.student_name.trim(),
-      last_name: sRest.join(' ') || '',
+      first_name: form.student_first_name.trim(),
+      last_name: form.student_last_name.trim(),
       grade: form.student_grade.trim() || null,
       birthday: form.student_birthday || null,
       family_id: fam?.id || null,
@@ -841,7 +837,7 @@ function Register() {
             <div className="form-ok">
               <div className="big">🎉</div>
               <h3>You're in!</h3>
-              <p>Thanks, {form.parent_name.split(' ')[0]}! Here's where {form.student_name.split(' ')[0]} landed:</p>
+              <p>Thanks, {form.parent_first_name}! Here's where {form.student_first_name} landed:</p>
               {outcomes.length > 0 ? (
                 <div className="outcome-list">
                   {outcomes.map((o, i) => (
@@ -854,7 +850,7 @@ function Register() {
                   ))}
                 </div>
               ) : (
-                <p style={{ fontSize: 14.5, color: 'var(--ink-soft)' }}>Corrie will follow up to help pick the right class for {form.student_name.split(' ')[0]}.</p>
+                <p style={{ fontSize: 14.5, color: 'var(--ink-soft)' }}>Corrie will follow up to help pick the right class for {form.student_first_name}.</p>
               )}
               <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 14 }}>Remember: enrollment isn't complete until a parent attends one of the two meeting dates. A confirmation email is on its way with the details.</p>
               {form.wants_donation && (
@@ -890,9 +886,9 @@ function Register() {
               </div>
 
               <p className="form-section-label">Parent / Guardian (Primary)</p>
-              <div className="fg">
-                <label>Your name *</label>
-                <input type="text" placeholder="Your name" value={form.parent_name} onChange={set('parent_name')} required />
+              <div className="fg2">
+                <div className="fg"><label>First name *</label><input type="text" placeholder="First name" value={form.parent_first_name} onChange={set('parent_first_name')} required /></div>
+                <div className="fg"><label>Last name *</label><input type="text" placeholder="Last name" value={form.parent_last_name} onChange={set('parent_last_name')} required /></div>
               </div>
               <div className="fg2">
                 <div className="fg"><label>Email *</label><input type="email" placeholder="you@email.com" value={form.email} onChange={set('email')} required /></div>
@@ -921,12 +917,16 @@ function Register() {
 
               <p className="form-section-label">Dancer</p>
               <div className="fg2">
-                <div className="fg"><label>Child's name *</label><input type="text" placeholder="Dancer's name" value={form.student_name} onChange={set('student_name')} required /></div>
-                <div className="fg"><label>Grade *</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} required /></div>
+                <div className="fg"><label>First name *</label><input type="text" placeholder="First name" value={form.student_first_name} onChange={set('student_first_name')} required /></div>
+                <div className="fg"><label>Last name *</label><input type="text" placeholder="Last name" value={form.student_last_name} onChange={set('student_last_name')} required /></div>
               </div>
               <div className="fg2">
+                <div className="fg"><label>Grade *</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} required /></div>
                 <div className="fg"><label>Age *</label><input type="text" placeholder="e.g. 8" value={form.student_age} onChange={set('student_age')} required /></div>
-                <div className="fg"><label>Student birthday *</label><input type="date" value={form.student_birthday} onChange={set('student_birthday')} required /></div>
+              </div>
+              <div className="fg">
+                <label>Student birthday *</label>
+                <input type="date" value={form.student_birthday} onChange={set('student_birthday')} required />
               </div>
               <div className="fg">
                 <label>How did you hear about us? *</label>
