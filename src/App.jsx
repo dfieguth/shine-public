@@ -523,11 +523,20 @@ const BLANK_FORM = {
   student_name: '', student_grade: '', student_age: '', student_birthday: '',
   secondary_parent_name: '', secondary_parent_email: '', secondary_parent_phone: '',
   emergency_contact_name: '', emergency_contact_relationship: '', emergency_contact_phone: '',
-  interested_classes: [],
+  interested_classes: [], not_sure: false,
+  heard_about: '', heard_about_other: '',
   meeting_aug28: false, meeting_sep3: false, meeting_acknowledged: false,
   wants_donation: false,
   waiver: false,
 }
+const HEARD_ABOUT_OPTIONS = [
+  'Friend or family referral',
+  'Church bulletin or announcement',
+  'Social media',
+  'Website / online search',
+  'Saw a Shine performance',
+  'Other',
+]
 
 function Register() {
   const [form, setForm] = useState(BLANK_FORM)
@@ -560,28 +569,52 @@ function Register() {
   }, [])
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
-  function toggleClass(name) {
+  // Keyed by class ID, not name. Two classes can have the same or very
+  // similar names (this happened in practice — two separate "Monday
+  // Ballet III" entries), and matching by name meant a duplicate-named
+  // class could visually select alongside the one actually clicked, or a
+  // student could get logged as interested in one and enrolled in the
+  // other. IDs are always unique, so this can't happen once fixed.
+  function toggleClass(id) {
     setForm((f) => ({
       ...f,
-      interested_classes: f.interested_classes.includes(name)
-        ? f.interested_classes.filter((c) => c !== name)
-        : [...f.interested_classes, name],
+      interested_classes: f.interested_classes.includes(id)
+        ? f.interested_classes.filter((c) => c !== id)
+        : [...f.interested_classes, id],
     }))
   }
 
   async function submit() {
     setErr('')
     if (!form.is_returning) { setErr('Please let us know if your dancer is new to Shine or returning.'); return }
-    if (!form.parent_name.trim() || !form.student_name.trim()) { setErr('Please add your name and your dancer\'s name.'); return }
-    if (!form.email.trim() && !form.phone.trim()) { setErr('Please add an email or a phone number so we can reach you.'); return }
+    if (!form.parent_name.trim()) { setErr('Please add your name.'); return }
+    if (!form.email.trim()) { setErr('Please add your email address.'); return }
+    if (!form.phone.trim()) { setErr('Please add your phone number.'); return }
+    if (!form.student_name.trim()) { setErr('Please add your dancer\'s name.'); return }
+    if (!form.student_grade.trim()) { setErr('Please add your dancer\'s grade.'); return }
+    if (!form.student_age.trim()) { setErr('Please add your dancer\'s age.'); return }
+    if (!form.student_birthday) { setErr('Please add your dancer\'s birthday.'); return }
+    if (!form.interested_classes.length && !form.not_sure) { setErr('Please select at least one class, or check "I\'m not sure — please contact me."'); return }
+    if (!form.heard_about) { setErr('Please let us know how you heard about us.'); return }
+    if (form.heard_about === 'Other' && !form.heard_about_other.trim()) { setErr('Please tell us a bit more in the "how did you hear about us" box.'); return }
     if (!form.meeting_aug28 && !form.meeting_sep3) { setErr('Please select at least one Mandatory Parent Meeting date you plan to attend.'); return }
     if (!form.meeting_acknowledged) { setErr('Please confirm you understand enrollment isn\'t complete until a parent meeting is attended.'); return }
     if (!form.waiver) { setErr('Please check the permission box to continue.'); return }
     if (!supabase) { setErr('Registration isn\'t connected yet. Please email Corrie at shineGHFC@gmail.com and she\'ll get you set up.'); return }
     setBusy(true)
-    const classesText = form.interested_classes.length
-      ? form.interested_classes.join(', ')
-      : 'Not sure yet — help me choose'
+
+    // Resolve which of the selected class IDs are real, live classes BEFORE
+    // creating the student — this also produces the human-readable class
+    // names used in the log and confirmation email.
+    const matchedClasses = form.interested_classes
+      .map((id) => (liveClasses || []).find((c) => c.id === id))
+      .filter(Boolean)
+    const classesText = form.not_sure || !matchedClasses.length
+      ? 'Not sure yet — help me choose'
+      : matchedClasses.map((c) => c.name).join(', ')
+    const heardAbout = form.heard_about === 'Other'
+      ? `Other: ${form.heard_about_other.trim()}`
+      : form.heard_about
 
     // 1. Log the raw registration (Corrie's record of what was submitted —
     //    unchanged from before). Built as a plain object first so the same
@@ -603,6 +636,7 @@ function Register() {
       emergency_contact_relationship: form.emergency_contact_relationship.trim() || null,
       emergency_contact_phone: form.emergency_contact_phone.trim() || null,
       interested_class: classesText,
+      heard_about: heardAbout || null,
       is_returning: form.is_returning === 'returning',
       meeting_aug28: form.meeting_aug28,
       meeting_sep3: form.meeting_sep3,
@@ -637,15 +671,6 @@ function Register() {
       emergency_contact_phone: form.emergency_contact_phone.trim() || null,
       notes: form.wants_donation ? 'Registration donation intent noted at signup.' : null,
     }).select().single()
-
-    // Resolve which of the selected class names are real, live classes
-    // BEFORE creating the student. This decides whether the student should
-    // land Active or Inactive right at insert time. The public site only
-    // has INSERT access to `students` (no UPDATE), so this has to be
-    // decided up front, not fixed with a follow-up update call.
-    const matchedClasses = form.interested_classes
-      .map((className) => (liveClasses || []).find((c) => c.name === className))
-      .filter(Boolean)
 
     const [sFirst, ...sRest] = form.student_name.trim().split(' ')
     const meetingNote = [form.meeting_aug28 && 'Aug 28 meeting', form.meeting_sep3 && 'Sep 3 meeting'].filter(Boolean).join(' + ')
@@ -748,6 +773,13 @@ function Register() {
                   <a href={REGISTRATION_DONATION_URL} target="_blank" rel="noreferrer" className="btn-primary">Complete registration donation</a>
                 </div>
               )}
+              <button
+                className="btn-primary"
+                style={{ marginTop: 18 }}
+                onClick={() => { setForm(BLANK_FORM); setOutcomes([]); setDone(false); setErr('') }}
+              >
+                Register another student
+              </button>
             </div>
           ) : (
             <>
@@ -769,12 +801,12 @@ function Register() {
 
               <p className="form-section-label">Parent / Guardian (Primary)</p>
               <div className="fg">
-                <label>Your name</label>
-                <input type="text" placeholder="Your name" value={form.parent_name} onChange={set('parent_name')} />
+                <label>Your name *</label>
+                <input type="text" placeholder="Your name" value={form.parent_name} onChange={set('parent_name')} required />
               </div>
               <div className="fg2">
-                <div className="fg"><label>Email</label><input type="email" placeholder="you@email.com" value={form.email} onChange={set('email')} /></div>
-                <div className="fg"><label>Phone</label><input type="tel" placeholder="(000) 000-0000" value={form.phone} onChange={set('phone')} /></div>
+                <div className="fg"><label>Email *</label><input type="email" placeholder="you@email.com" value={form.email} onChange={set('email')} required /></div>
+                <div className="fg"><label>Phone *</label><input type="tel" placeholder="(000) 000-0000" value={form.phone} onChange={set('phone')} required /></div>
               </div>
 
               <p className="form-section-label">Parent / Guardian (Secondary — optional)</p>
@@ -799,20 +831,30 @@ function Register() {
 
               <p className="form-section-label">Dancer</p>
               <div className="fg2">
-                <div className="fg"><label>Child's name</label><input type="text" placeholder="Dancer's name" value={form.student_name} onChange={set('student_name')} /></div>
-                <div className="fg"><label>Grade</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} /></div>
+                <div className="fg"><label>Child's name *</label><input type="text" placeholder="Dancer's name" value={form.student_name} onChange={set('student_name')} required /></div>
+                <div className="fg"><label>Grade *</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} required /></div>
               </div>
               <div className="fg2">
-                <div className="fg"><label>Age</label><input type="text" placeholder="e.g. 8" value={form.student_age} onChange={set('student_age')} /></div>
-                <div className="fg"><label>Student birthday</label><input type="date" value={form.student_birthday} onChange={set('student_birthday')} /></div>
+                <div className="fg"><label>Age *</label><input type="text" placeholder="e.g. 8" value={form.student_age} onChange={set('student_age')} required /></div>
+                <div className="fg"><label>Student birthday *</label><input type="date" value={form.student_birthday} onChange={set('student_birthday')} required /></div>
               </div>
               <div className="fg">
-                <label>Please select your class(es) for enrollment.</label>
+                <label>How did you hear about us? *</label>
+                <select value={form.heard_about} onChange={set('heard_about')} required>
+                  <option value="">Select one…</option>
+                  {HEARD_ABOUT_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+                {form.heard_about === 'Other' && (
+                  <input type="text" style={{ marginTop: 8 }} placeholder="Please tell us more" value={form.heard_about_other} onChange={set('heard_about_other')} />
+                )}
+              </div>
+              <div className="fg">
+                <label>Please select your class(es) for enrollment. *</label>
                 <div className="class-check-list">
                   {liveClasses
                     ? liveClasses.map((c) => (
-                        <label key={c.name} className="class-check-row">
-                          <input type="checkbox" checked={form.interested_classes.includes(c.name)} onChange={() => toggleClass(c.name)} />
+                        <label key={c.id} className="class-check-row">
+                          <input type="checkbox" checked={form.interested_classes.includes(c.id)} onChange={() => toggleClass(c.id)} disabled={form.not_sure} />
                           <span>
                             <strong>{c.name}</strong>{c.level ? ` (${c.level})` : ''}{c.full && <span className="full-tag" style={{ marginLeft: 6 }}>Full — waitlist</span>}
                             <br /><span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{[c.when, c.ageRange].filter(Boolean).join(' · ')}</span>
@@ -821,12 +863,19 @@ function Register() {
                       ))
                     : CLASS_OPTIONS.slice(1).map((c) => (
                         <label key={c} className="class-check-row">
-                          <input type="checkbox" checked={form.interested_classes.includes(c)} onChange={() => toggleClass(c)} />
+                          <input type="checkbox" checked={form.interested_classes.includes(c)} onChange={() => toggleClass(c)} disabled={form.not_sure} />
                           <span>{c}</span>
                         </label>
                       ))}
                 </div>
-                <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 6 }}>Not sure? Leave blank and Corrie will help you find the right fit.</p>
+                <label className="check" style={{ marginTop: 10 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.not_sure}
+                    onChange={(e) => setForm((f) => ({ ...f, not_sure: e.target.checked, interested_classes: e.target.checked ? [] : f.interested_classes }))}
+                  />
+                  <span>I'm not sure — please contact me to help pick the right class.</span>
+                </label>
               </div>
 
               <p className="form-section-label">Mandatory Parent Meeting</p>
