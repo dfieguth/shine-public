@@ -148,6 +148,7 @@ function Nav() {
             <a href="/#gallery">Gallery</a>
             <a href="/policies">Policies &amp; Forms</a>
             <button className="nav-text-btn" onClick={() => { setShowInterest(true); setIDone(false); setIErr('') }}>Just have questions?</button>
+            <a href={REGISTRATION_DONATION_URL} target="_blank" rel="noreferrer" className="nav-text-btn">Donate</a>
             <a href="/#register" className="nav-cta">Register</a>
           </div>
         </div>
@@ -598,14 +599,24 @@ function Register() {
       if (!cls || !cls.length) return
       const map = {}
       for (const r of counts || []) map[r.class_id] = Number(r.enrolled)
-      setLiveClasses(cls.map((c) => {
+      const withDetails = cls.map((c) => {
         const ageRange = (c.min_age || c.max_age) ? `Ages ${c.min_age || 0}${c.max_age ? `–${c.max_age}` : '+'}` : ''
         const when = [c.day_of_week, c.start_time ? `${c.start_time}${c.end_time ? `–${c.end_time}` : ''}` : ''].filter(Boolean).join(' ')
         return {
           id: c.id, name: c.name, level: c.level, when, ageRange, capacity: c.capacity,
+          day_of_week: c.day_of_week,
           full: !!(c.capacity && (map[c.id] || 0) >= c.capacity),
         }
-      }))
+      })
+      // Sort by name first, then by day of week — the fix for "classes
+      // aren't in any particular order" on the registration form. Same day
+      // ordering convention (DAY_ORDER) used elsewhere on this site.
+      withDetails.sort((a, b) => {
+        const byName = a.name.localeCompare(b.name)
+        if (byName !== 0) return byName
+        return DAY_ORDER.indexOf(a.day_of_week) - DAY_ORDER.indexOf(b.day_of_week)
+      })
+      setLiveClasses(withDetails)
     })()
   }, [])
 
@@ -1017,7 +1028,8 @@ function Footer() {
           <a href="/#register">Register a dancer</a>
           <a href="/#classes">View classes</a>
           <a href="/policies">Policies &amp; Forms</a>
-          <a href="https://pushpay.com/g/ghfclamirada" target="_blank" rel="noreferrer">Give through GHFC</a>
+          <a href={REGISTRATION_DONATION_URL} target="_blank" rel="noreferrer">Donate to Shine</a>
+          <a href="https://pushpay.com/g/ghfclamirada" target="_blank" rel="noreferrer">Give through GHFC (general)</a>
         </div>
       </div>
       <div className="foot-bottom">Shine Dance Studio · Granada Heights Friends Church</div>
