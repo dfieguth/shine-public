@@ -43,8 +43,16 @@ export const handler = async (event) => {
   const studentName = str(r.student_name) || 'a student'
   const parentEmail = str(r.email)
 
-  // Real per-class results if we have them, otherwise fall back to the
-  // free-text list of what they asked for.
+  // Split into three groups so the email can say something true and
+  // specific about each, instead of one flat list that doesn't distinguish
+  // "you're in" from "you're waitlisted." A class name + when, formatted
+  // as "Name, Day Time" per Corrie's template.
+  const classLabel = (o) => [str(o.name), str(o.when)].filter(Boolean).join(', ')
+  const enrolledOutcomes = outcomes.filter((o) => o.status === 'enrolled')
+  const waitlistedOutcomes = outcomes.filter((o) => o.status === 'waitlist')
+  const errorOutcomes = outcomes.filter((o) => o.status === 'error')
+
+  // Kept for the internal alert to Corrie, which still wants one flat scan.
   const classLines = outcomes.length
     ? outcomes.map((o) => {
         const when = str(o.when) ? ` · ${str(o.when)}` : ''
@@ -117,8 +125,23 @@ export const handler = async (event) => {
         '',
         `Thank you for registering ${studentName} with Shine Dance Studio! Here's where things stand:`,
         '',
-        ...classLines.map((l) => `  • ${l}`),
-        '',
+        ...(enrolledOutcomes.length ? [
+          `You're enrolled in:`,
+          ...enrolledOutcomes.map((o) => `  • ${classLabel(o)}`),
+          '',
+        ] : []),
+        ...(waitlistedOutcomes.length ? [
+          ...waitlistedOutcomes.map((o) =>
+            `Thank you for registering for the "${classLabel(o)}" Waitlist. I'm sorry we were unable to reserve a spot in this class for you. As spots become available, we will contact the next student on the waitlist.`
+          ),
+          'Please contact Corrie at shineGHFC@gmail.com if you have any questions.',
+          '',
+        ] : []),
+        ...(errorOutcomes.length ? [
+          `We ran into a problem saving the following — Corrie will follow up directly, no action needed from you:`,
+          ...errorOutcomes.map((o) => `  • ${classLabel(o)}`),
+          '',
+        ] : []),
         'Step 2 is to attend ONE of our two mandatory parent meetings:',
         `  • ${MEETINGS.aug28}`,
         `  • ${MEETINGS.sep3}`,
@@ -141,9 +164,16 @@ export const handler = async (event) => {
         text: parentText,
         html: wrapHtml(`<p style="margin:0 0 14px">Hi ${escapeHtml(parentName)},</p>
           <p style="margin:0 0 14px">Thank you for registering <strong>${escapeHtml(studentName)}</strong> with Shine Dance Studio! Here's where things stand:</p>
-          <ul style="margin:0 0 18px;padding-left:20px">
-            ${classLines.map((l) => `<li style="margin-bottom:6px">${escapeHtml(l)}</li>`).join('')}
-          </ul>
+          ${enrolledOutcomes.length ? `<p style="margin:0 0 6px"><strong>You're enrolled in:</strong></p>
+          <ul style="margin:0 0 16px;padding-left:20px">
+            ${enrolledOutcomes.map((o) => `<li style="margin-bottom:6px">${escapeHtml(classLabel(o))}</li>`).join('')}
+          </ul>` : ''}
+          ${waitlistedOutcomes.length ? `${waitlistedOutcomes.map((o) => `<p style="margin:0 0 10px">Thank you for registering for the "${escapeHtml(classLabel(o))}" Waitlist. I'm sorry we were unable to reserve a spot in this class for you. As spots become available, we will contact the next student on the waitlist.</p>`).join('')}
+          <p style="margin:0 0 16px">Please contact Corrie at shineGHFC@gmail.com if you have any questions.</p>` : ''}
+          ${errorOutcomes.length ? `<p style="margin:0 0 6px"><strong>We ran into a problem saving the following</strong> — Corrie will follow up directly, no action needed from you:</p>
+          <ul style="margin:0 0 16px;padding-left:20px">
+            ${errorOutcomes.map((o) => `<li style="margin-bottom:6px">${escapeHtml(classLabel(o))}</li>`).join('')}
+          </ul>` : ''}
           <p style="margin:0 0 8px"><strong>Step 2 is to attend ONE of our two mandatory parent meetings:</strong></p>
           <ul style="margin:0 0 14px;padding-left:20px">
             <li style="margin-bottom:6px">${escapeHtml(MEETINGS.aug28)}</li>
