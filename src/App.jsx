@@ -561,6 +561,7 @@ const BLANK_FORM = {
   interested_classes: [], not_sure: false,
   heard_about: '', heard_about_other: '',
   meeting_aug28: false, meeting_sep3: false, meeting_acknowledged: false,
+  donation_model_acknowledged: false,
   wants_donation: false,
   waiver: false,
 }
@@ -656,6 +657,7 @@ function Register() {
     if (form.heard_about === 'Other' && !form.heard_about_other.trim()) { setErr('Please tell us a bit more in the "how did you hear about us" box.'); return }
     if (!form.meeting_aug28 && !form.meeting_sep3) { setErr('Please select at least one Mandatory Parent Meeting date you plan to attend.'); return }
     if (!form.meeting_acknowledged) { setErr('Please confirm you understand enrollment isn\'t complete until a parent meeting is attended.'); return }
+    if (!form.donation_model_acknowledged) { setErr('Please check the box confirming you understand Shine is run by volunteers and donations.'); return }
     if (!form.waiver) { setErr('Please check the permission box to continue.'); return }
     if (!supabase) { setErr('Registration isn\'t connected yet. Please email Corrie at shineGHFC@gmail.com and she\'ll get you set up.'); return }
     setBusy(true)
@@ -990,7 +992,8 @@ function Register() {
               <label className="check"><input type="checkbox" checked={form.meeting_acknowledged} onChange={set('meeting_acknowledged')} /><span>I understand my student's enrollment with Shine is <strong>NOT complete</strong> until a parent or guardian attends one of the above meeting dates.</span></label>
 
               <p className="form-section-label">Registration Donation</p>
-              <label className="check"><input type="checkbox" checked={form.wants_donation} onChange={set('wants_donation')} /><span>I understand Shine is run completely by volunteers and donations. I would like to make a registration donation (suggested amount: $100 per family).</span></label>
+              <label className="check"><input type="checkbox" checked={form.donation_model_acknowledged} onChange={set('donation_model_acknowledged')} required /><span>I understand Shine is run completely by volunteers and donations.</span></label>
+              <label className="check"><input type="checkbox" checked={form.wants_donation} onChange={set('wants_donation')} /><span>I would like to make a registration donation (suggested amount: $100 per family).</span></label>
 
               <label className="check" style={{ marginTop: 14 }}>
                 <input type="checkbox" checked={form.waiver} onChange={set('waiver')} />
@@ -1029,7 +1032,11 @@ function Footer() {
           <a href="/#classes">View classes</a>
           <a href="/policies">Policies &amp; Forms</a>
           <a href={REGISTRATION_DONATION_URL} target="_blank" rel="noreferrer">Donate to Shine</a>
-          <a href="https://pushpay.com/g/ghfclamirada" target="_blank" rel="noreferrer">Give through GHFC (general)</a>
+          {/* "Give through GHFC (general)" link removed per Corrie/Julieanne
+              feedback — the church's general giving page currently has no
+              way to designate a gift to Shine specifically, so the link was
+              confusing rather than helpful. Re-add once that's resolved on
+              the church's end. */}
         </div>
       </div>
       <div className="foot-bottom">Shine Dance Studio · Granada Heights Friends Church</div>
