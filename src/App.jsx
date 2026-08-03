@@ -770,14 +770,25 @@ function Register() {
     //    Each insert's error is checked — a failed enrollment now shows up
     //    honestly as an error in the results, instead of silently reporting
     //    "enrolled" while nothing was actually written to the database.
+    //
+    //    IMPORTANT: the count MUST come from class_enrollment_counts(), the
+    //    security-definer RPC also used to build the "Full" tag on the
+    //    class list above. A direct count against `enrollments` (what this
+    //    used to do) silently returns 0 for anon every time, since the
+    //    public was deliberately never given SELECT on that table — so this
+    //    check was never actually blocking anyone from over-enrolling,
+    //    regardless of capacity. This wasn't introduced recently; it's been
+    //    true since instant registration was first built.
+    const { data: liveCounts } = await supabase.rpc('class_enrollment_counts')
+    const enrolledCountByClass = {}
+    for (const row of liveCounts || []) enrolledCountByClass[row.class_id] = Number(row.enrolled) || 0
+
     const results = []
     if (stu) {
       for (const cls of matchedClasses) {
         let status = 'enrolled'
-        if (cls.capacity) {
-          const { count } = await supabase.from('enrollments').select('id', { count: 'exact', head: true }).eq('class_id', cls.id).eq('status', 'enrolled')
-          if ((count ?? 0) >= cls.capacity) status = 'waitlist'
-        }
+        if (cls.capacity && (enrolledCountByClass[cls.id] || 0) >= cls.capacity) status = 'waitlist'
+        else enrolledCountByClass[cls.id] = (enrolledCountByClass[cls.id] || 0) + 1 // so a second class in the SAME submission also sees this one counted
         const { error: enrollErr } = await supabase.from('enrollments').insert({ student_id: stu.id, class_id: cls.id, status })
         if (enrollErr) {
           console.error('Registration: enrollment insert failed —', cls.name, enrollErr)
