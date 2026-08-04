@@ -149,18 +149,24 @@ export const handler = async (event) => {
         '',
         'Please note: if a parent does not attend one of the two meetings, we will remove your child from the roster.',
         '',
-        'If anything above looks wrong, just reply to this email and we\'ll fix it.',
+        'If you have any questions/concerns about your above registration, please reply to this email. We are happy to help.',
         '',
         'Grace and Peace,',
         'Corrie Villa',
         'Shine Dance Studio, a ministry of Granada Heights Friends Church',
       ].join('\n')
 
+      const subject = enrolledOutcomes.length
+        ? `You're in! Next steps for ${studentName} at Shine`
+        : waitlistedOutcomes.length
+          ? `You have been waitlisted for a Shine Class`
+          : `Your Shine registration for ${studentName}`
+
       await transporter.sendMail({
         from: `"Shine Dance Studio" <${gmailAddress}>`,
         to: parentEmail,
         replyTo: gmailAddress,
-        subject: `You're in! Next steps for ${studentName} at Shine`,
+        subject,
         text: parentText,
         html: wrapHtml(`<p style="margin:0 0 14px">Hi ${escapeHtml(parentName)},</p>
           <p style="margin:0 0 14px">Thank you for registering <strong>${escapeHtml(studentName)}</strong> with Shine Dance Studio! Here's where things stand:</p>
@@ -181,7 +187,7 @@ export const handler = async (event) => {
           </ul>
           ${meetings ? `<p style="margin:0 0 14px">You selected: ${escapeHtml(meetings)}</p>` : ''}
           <p style="margin:0 0 14px">Please note: if a parent does not attend one of the two meetings, we will remove your child from the roster.</p>
-          <p style="margin:0 0 14px">If anything above looks wrong, just reply to this email and we'll fix it.</p>
+          <p style="margin:0 0 14px">If you have any questions/concerns about your above registration, please reply to this email. We are happy to help.</p>
           <p style="margin:0">Grace and Peace,<br>Corrie Villa</p>`),
       })
     } catch (e) {
