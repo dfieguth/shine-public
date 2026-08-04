@@ -622,6 +622,17 @@ function Register() {
   }, [])
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
+  // Scrolls to and briefly highlights the field a validation error refers
+  // to, so "Please add your first name" doesn't leave someone hunting
+  // through a long form to find which box that means. Matched to a DOM id
+  // on that field's wrapper (id="field-KEY"), not a ref registry — much
+  // less invasive to wire up across this many fields.
+  const [highlight, setHighlight] = useState('')
+  function focusField(key) {
+    setHighlight(key)
+    const el = document.getElementById(`field-${key}`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
   // Keyed by class ID, not name. Two classes can have the same or very
   // similar names (this happened in practice — two separate "Monday
   // Ballet III" entries), and matching by name meant a duplicate-named
@@ -639,26 +650,26 @@ function Register() {
 
   async function submit() {
     setErr('')
-    if (!form.is_returning) { setErr('Please let us know if your dancer is new to Shine or returning.'); return }
-    if (!form.parent_first_name.trim()) { setErr('Please add your first name.'); return }
-    if (!form.parent_last_name.trim()) { setErr('Please add your last name.'); return }
-    if (!form.email.trim()) { setErr('Please add your email address.'); return }
-    if (!form.phone.trim()) { setErr('Please add your phone number.'); return }
-    if (!form.student_first_name.trim()) { setErr('Please add your dancer\'s first name.'); return }
-    if (!form.student_last_name.trim()) { setErr('Please add your dancer\'s last name.'); return }
-    if (!form.student_grade.trim()) { setErr('Please add your dancer\'s grade.'); return }
-    if (!form.student_age.trim()) { setErr('Please add your dancer\'s age.'); return }
-    if (!form.student_birthday) { setErr('Please add your dancer\'s birthday.'); return }
-    if (!form.emergency_contact_name.trim()) { setErr('Please add an emergency contact name.'); return }
-    if (!form.emergency_contact_relationship.trim()) { setErr('Please add the emergency contact\'s relationship to your dancer.'); return }
-    if (!form.emergency_contact_phone.trim()) { setErr('Please add an emergency contact phone number.'); return }
-    if (!form.interested_classes.length && !form.not_sure) { setErr('Please select at least one class, or check "I\'m not sure — please contact me."'); return }
-    if (!form.heard_about) { setErr('Please let us know how you heard about us.'); return }
-    if (form.heard_about === 'Other' && !form.heard_about_other.trim()) { setErr('Please tell us a bit more in the "how did you hear about us" box.'); return }
-    if (!form.meeting_aug28 && !form.meeting_sep3) { setErr('Please select at least one Mandatory Parent Meeting date you plan to attend.'); return }
-    if (!form.meeting_acknowledged) { setErr('Please confirm you understand enrollment isn\'t complete until a parent meeting is attended.'); return }
-    if (!form.donation_model_acknowledged) { setErr('Please check the box confirming you understand Shine is run by volunteers and donations.'); return }
-    if (!form.waiver) { setErr('Please check the permission box to continue.'); return }
+    if (!form.is_returning) { setErr('Please let us know if your dancer is new to Shine or returning.'); focusField('is_returning'); return }
+    if (!form.parent_first_name.trim()) { setErr('Please add your first name.'); focusField('parent_first_name'); return }
+    if (!form.parent_last_name.trim()) { setErr('Please add your last name.'); focusField('parent_last_name'); return }
+    if (!form.email.trim()) { setErr('Please add your email address.'); focusField('email'); return }
+    if (!form.phone.trim()) { setErr('Please add your phone number.'); focusField('phone'); return }
+    if (!form.student_first_name.trim()) { setErr('Please add your dancer\'s first name.'); focusField('student_first_name'); return }
+    if (!form.student_last_name.trim()) { setErr('Please add your dancer\'s last name.'); focusField('student_last_name'); return }
+    if (!form.student_grade.trim()) { setErr('Please add your dancer\'s grade.'); focusField('student_grade'); return }
+    if (!form.student_age.trim()) { setErr('Please add your dancer\'s age.'); focusField('student_age'); return }
+    if (!form.student_birthday) { setErr('Please add your dancer\'s birthday.'); focusField('student_birthday'); return }
+    if (!form.emergency_contact_name.trim()) { setErr('Please add an emergency contact name.'); focusField('emergency_contact_name'); return }
+    if (!form.emergency_contact_relationship.trim()) { setErr('Please add the emergency contact\'s relationship to your dancer.'); focusField('emergency_contact_relationship'); return }
+    if (!form.emergency_contact_phone.trim()) { setErr('Please add an emergency contact phone number.'); focusField('emergency_contact_phone'); return }
+    if (!form.interested_classes.length && !form.not_sure) { setErr('Please select at least one class, or check "I\'m not sure — please contact me."'); focusField('interested_classes'); return }
+    if (!form.heard_about) { setErr('Please let us know how you heard about us.'); focusField('heard_about'); return }
+    if (form.heard_about === 'Other' && !form.heard_about_other.trim()) { setErr('Please tell us a bit more in the "how did you hear about us" box.'); focusField('heard_about'); return }
+    if (!form.meeting_aug28 && !form.meeting_sep3) { setErr('Please select at least one Mandatory Parent Meeting date you plan to attend.'); focusField('meeting'); return }
+    if (!form.meeting_acknowledged) { setErr('Please confirm you understand enrollment isn\'t complete until a parent meeting is attended.'); focusField('meeting_acknowledged'); return }
+    if (!form.donation_model_acknowledged) { setErr('Please check the box confirming you understand Shine is run by volunteers and donations.'); focusField('donation_model_acknowledged'); return }
+    if (!form.waiver) { setErr('Please check the permission box to continue.'); focusField('waiver'); return }
     if (!supabase) { setErr('Registration isn\'t connected yet. Please email Corrie at shineGHFC@gmail.com and she\'ll get you set up.'); return }
     setBusy(true)
 
@@ -886,7 +897,17 @@ function Register() {
               <button
                 className="btn-primary"
                 style={{ marginTop: 18 }}
-                onClick={() => { setForm(BLANK_FORM); setOutcomes([]); setDone(false); setErr('') }}
+                onClick={() => {
+                  // A full reload, not just a state reset. liveClasses (and
+                  // its "Full" status) is only fetched once when this page
+                  // first loads — resetting form state alone would leave
+                  // the class list showing capacity numbers from before the
+                  // registration that was just submitted, which is exactly
+                  // what let a second person register into an already-full
+                  // class. Reloading guarantees fresh capacity data.
+                  window.location.hash = 'register'
+                  window.location.reload()
+                }}
               >
                 Register another student
               </button>
@@ -898,7 +919,7 @@ function Register() {
               {err && <div className="form-err">{err}</div>}
 
               <p className="form-section-label">Is your dancer new to Shine, or returning?</p>
-              <div className="class-check-list" style={{ display: 'flex', gap: 0 }}>
+              <div id="field-is_returning" className={`class-check-list ${highlight === 'is_returning' ? 'field-flash' : ''}`} style={{ display: 'flex', gap: 0 }}>
                 <label className="class-check-row" style={{ flex: 1 }}>
                   <input type="radio" name="is_returning" checked={form.is_returning === 'new'} onChange={() => setForm({ ...form, is_returning: 'new' })} />
                   <span>New student</span>
@@ -911,12 +932,12 @@ function Register() {
 
               <p className="form-section-label">Parent / Guardian (Primary)</p>
               <div className="fg2">
-                <div className="fg"><label>First name *</label><input type="text" placeholder="First name" value={form.parent_first_name} onChange={set('parent_first_name')} required /></div>
-                <div className="fg"><label>Last name *</label><input type="text" placeholder="Last name" value={form.parent_last_name} onChange={set('parent_last_name')} required /></div>
+                <div id="field-parent_first_name" className={`fg ${highlight === 'parent_first_name' ? 'field-flash' : ''}`}><label>First name *</label><input type="text" placeholder="First name" value={form.parent_first_name} onChange={set('parent_first_name')} required /></div>
+                <div id="field-parent_last_name" className={`fg ${highlight === 'parent_last_name' ? 'field-flash' : ''}`}><label>Last name *</label><input type="text" placeholder="Last name" value={form.parent_last_name} onChange={set('parent_last_name')} required /></div>
               </div>
               <div className="fg2">
-                <div className="fg"><label>Email *</label><input type="email" placeholder="you@email.com" value={form.email} onChange={set('email')} required /></div>
-                <div className="fg"><label>Phone *</label><input type="tel" placeholder="(000) 000-0000" value={form.phone} onChange={set('phone')} required /></div>
+                <div id="field-email" className={`fg ${highlight === 'email' ? 'field-flash' : ''}`}><label>Email *</label><input type="email" placeholder="you@email.com" value={form.email} onChange={set('email')} required /></div>
+                <div id="field-phone" className={`fg ${highlight === 'phone' ? 'field-flash' : ''}`}><label>Phone *</label><input type="tel" placeholder="(000) 000-0000" value={form.phone} onChange={set('phone')} required /></div>
               </div>
 
               <p className="form-section-label">Parent / Guardian (Secondary — optional)</p>
@@ -931,28 +952,28 @@ function Register() {
 
               <p className="form-section-label">Emergency Contact (other than a parent)</p>
               <div className="fg2">
-                <div className="fg"><label>Name *</label><input type="text" value={form.emergency_contact_name} onChange={set('emergency_contact_name')} required /></div>
-                <div className="fg"><label>Relationship *</label><input type="text" placeholder="e.g. Grandparent, neighbor" value={form.emergency_contact_relationship} onChange={set('emergency_contact_relationship')} required /></div>
+                <div id="field-emergency_contact_name" className={`fg ${highlight === 'emergency_contact_name' ? 'field-flash' : ''}`}><label>Name *</label><input type="text" value={form.emergency_contact_name} onChange={set('emergency_contact_name')} required /></div>
+                <div id="field-emergency_contact_relationship" className={`fg ${highlight === 'emergency_contact_relationship' ? 'field-flash' : ''}`}><label>Relationship *</label><input type="text" placeholder="e.g. Grandparent, neighbor" value={form.emergency_contact_relationship} onChange={set('emergency_contact_relationship')} required /></div>
               </div>
-              <div className="fg">
+              <div id="field-emergency_contact_phone" className={`fg ${highlight === 'emergency_contact_phone' ? 'field-flash' : ''}`}>
                 <label>Phone *</label>
                 <input type="tel" value={form.emergency_contact_phone} onChange={set('emergency_contact_phone')} required />
               </div>
 
               <p className="form-section-label">Dancer</p>
               <div className="fg2">
-                <div className="fg"><label>First name *</label><input type="text" placeholder="First name" value={form.student_first_name} onChange={set('student_first_name')} required /></div>
-                <div className="fg"><label>Last name *</label><input type="text" placeholder="Last name" value={form.student_last_name} onChange={set('student_last_name')} required /></div>
+                <div id="field-student_first_name" className={`fg ${highlight === 'student_first_name' ? 'field-flash' : ''}`}><label>First name *</label><input type="text" placeholder="First name" value={form.student_first_name} onChange={set('student_first_name')} required /></div>
+                <div id="field-student_last_name" className={`fg ${highlight === 'student_last_name' ? 'field-flash' : ''}`}><label>Last name *</label><input type="text" placeholder="Last name" value={form.student_last_name} onChange={set('student_last_name')} required /></div>
               </div>
               <div className="fg2">
-                <div className="fg"><label>Grade *</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} required /></div>
-                <div className="fg"><label>Age *</label><input type="text" placeholder="e.g. 8" value={form.student_age} onChange={set('student_age')} required /></div>
+                <div id="field-student_grade" className={`fg ${highlight === 'student_grade' ? 'field-flash' : ''}`}><label>Grade *</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} required /></div>
+                <div id="field-student_age" className={`fg ${highlight === 'student_age' ? 'field-flash' : ''}`}><label>Age *</label><input type="text" placeholder="e.g. 8" value={form.student_age} onChange={set('student_age')} required /></div>
               </div>
-              <div className="fg">
+              <div id="field-student_birthday" className={`fg ${highlight === 'student_birthday' ? 'field-flash' : ''}`}>
                 <label>Student birthday *</label>
                 <input type="date" value={form.student_birthday} onChange={set('student_birthday')} required />
               </div>
-              <div className="fg">
+              <div id="field-heard_about" className={`fg ${highlight === 'heard_about' ? 'field-flash' : ''}`}>
                 <label>How did you hear about us? *</label>
                 <select value={form.heard_about} onChange={set('heard_about')} required>
                   <option value="">Select one…</option>
@@ -962,7 +983,7 @@ function Register() {
                   <input type="text" style={{ marginTop: 8 }} placeholder="Please tell us more" value={form.heard_about_other} onChange={set('heard_about_other')} />
                 )}
               </div>
-              <div className="fg">
+              <div id="field-interested_classes" className={`fg ${highlight === 'interested_classes' ? 'field-flash' : ''}`}>
                 <label>{sc.class_select_label} *</label>
                 <div className="class-check-list">
                   {liveClasses
@@ -994,19 +1015,21 @@ function Register() {
 
               <p className="form-section-label">Mandatory Parent Meeting</p>
               <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8 }}>I plan to attend the Mandatory Parent Meeting on:</p>
-              <label className="check"><input type="checkbox" checked={form.meeting_aug28} onChange={set('meeting_aug28')} /><span>{sc.meeting_aug28_label}</span></label>
-              {/* Field name "meeting_sep3" is a historical internal key — the
-                  actual date/time shown to parents is sc.meeting_sep3_label,
-                  edited via Admin → Site Content. Do not rename this field
-                  to match the label; the label is what's meant to change. */}
-              <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>{sc.meeting_sep3_label}</span></label>
-              <label className="check"><input type="checkbox" checked={form.meeting_acknowledged} onChange={set('meeting_acknowledged')} /><span>I understand my student's enrollment with Shine is <strong>NOT complete</strong> until a parent or guardian attends one of the above meeting dates.</span></label>
+              <div id="field-meeting" className={highlight === 'meeting' ? 'field-flash' : ''}>
+                <label className="check"><input type="checkbox" checked={form.meeting_aug28} onChange={set('meeting_aug28')} /><span>{sc.meeting_aug28_label}</span></label>
+                {/* Field name "meeting_sep3" is a historical internal key — the
+                    actual date/time shown to parents is sc.meeting_sep3_label,
+                    edited via Admin → Site Content. Do not rename this field
+                    to match the label; the label is what's meant to change. */}
+                <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>{sc.meeting_sep3_label}</span></label>
+              </div>
+              <label id="field-meeting_acknowledged" className={`check ${highlight === 'meeting_acknowledged' ? 'field-flash' : ''}`}><input type="checkbox" checked={form.meeting_acknowledged} onChange={set('meeting_acknowledged')} /><span>I understand my student's enrollment with Shine is <strong>NOT complete</strong> until a parent or guardian attends one of the above meeting dates.</span></label>
 
               <p className="form-section-label">Registration Donation</p>
-              <label className="check"><input type="checkbox" checked={form.donation_model_acknowledged} onChange={set('donation_model_acknowledged')} required /><span>I understand Shine is run completely by volunteers and donations.</span></label>
+              <label id="field-donation_model_acknowledged" className={`check ${highlight === 'donation_model_acknowledged' ? 'field-flash' : ''}`}><input type="checkbox" checked={form.donation_model_acknowledged} onChange={set('donation_model_acknowledged')} required /><span>I understand Shine is run completely by volunteers and donations.</span></label>
               <label className="check"><input type="checkbox" checked={form.wants_donation} onChange={set('wants_donation')} /><span>I would like to make a registration donation (suggested amount: $100 per family).</span></label>
 
-              <label className="check" style={{ marginTop: 14 }}>
+              <label id="field-waiver" className={`check ${highlight === 'waiver' ? 'field-flash' : ''}`} style={{ marginTop: 14 }}>
                 <input type="checkbox" checked={form.waiver} onChange={set('waiver')} />
                 <span>I understand this is a church ministry program and give permission for my child to participate.</span>
               </label>
@@ -1117,6 +1140,34 @@ function PoliciesPage() {
 
 export default function App() {
   const isPolicies = typeof window !== 'undefined' && window.location.pathname.replace(/\/$/, '') === '/policies'
+  useEffect(() => {
+    if (isPolicies) return
+    let t1, t2
+    const scrollToHash = () => {
+      const hash = window.location.hash.replace('#', '')
+      if (!hash) return
+      const el = document.getElementById(hash)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    // Re-correcting a moment after the initial jump is the fix for
+    // "clicking Register sometimes lands on Gallery instead" — Gallery
+    // starts as 5 placeholder tiles and can grow substantially once its
+    // real photo list loads from storage. Native anchor scrolling only
+    // fires once, at click time; if Gallery (which sits right above
+    // Register) grows after that, the page shifts underneath the person
+    // and they end up looking at whatever's now sitting at the old scroll
+    // position — which is Gallery. Re-running the scroll shortly after
+    // catches that shift and corrects for it.
+    const scrollWithRetries = () => {
+      scrollToHash()
+      clearTimeout(t1); clearTimeout(t2)
+      t1 = setTimeout(scrollToHash, 500)
+      t2 = setTimeout(scrollToHash, 1400)
+    }
+    scrollWithRetries()
+    window.addEventListener('hashchange', scrollWithRetries)
+    return () => { window.removeEventListener('hashchange', scrollWithRetries); clearTimeout(t1); clearTimeout(t2) }
+  }, [isPolicies])
   if (isPolicies) return <PoliciesPage />
   return (
     <>
