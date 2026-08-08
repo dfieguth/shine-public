@@ -117,6 +117,31 @@ function Nav() {
   const [iBusy, setIBusy] = useState(false)
   const [iDone, setIDone] = useState(false)
   const [iErr, setIErr] = useState('')
+  // Second "Volunteer with us" entry point, same form/table as the one in
+  // the Support section further down the page — just more visible at the
+  // top for people who'd rather not scroll to find it. Self-contained here
+  // the same way "Just have questions?" is, rather than sharing state with
+  // the Support component.
+  const [showVol, setShowVol] = useState(false)
+  const [vForm, setVForm] = useState({ name: '', email: '', phone: '', message: '' })
+  const [vBusy, setVBusy] = useState(false)
+  const [vDone, setVDone] = useState(false)
+  const [vErr, setVErr] = useState('')
+  const setV = (k) => (e) => setVForm({ ...vForm, [k]: e.target.value })
+  async function submitVolunteer() {
+    setVErr('')
+    if (!vForm.name.trim()) { setVErr('Please add your name.'); return }
+    if (!vForm.email.trim() && !vForm.phone.trim()) { setVErr('Please add an email or phone so we can reach you.'); return }
+    if (!supabase) { setVErr('Not connected yet — please email shineGHFC@gmail.com directly.'); return }
+    setVBusy(true)
+    const { error } = await supabase.from('volunteer_inquiries').insert({
+      name: vForm.name.trim(), email: vForm.email.trim() || null,
+      phone: vForm.phone.trim() || null, message: vForm.message.trim() || null,
+    })
+    setVBusy(false)
+    if (error) { setVErr('Something went wrong — please email shineGHFC@gmail.com.'); return }
+    setVDone(true)
+  }
   useEffect(() => {
     const onScroll = () => setSolid(window.scrollY > 40)
     onScroll()
@@ -147,12 +172,41 @@ function Nav() {
             <a href="/#instructors">Our Team</a>
             <a href="/#gallery">Gallery</a>
             <a href="/policies">Policies &amp; Forms</a>
+            <button className="nav-text-btn" onClick={() => { setShowVol(true); setVDone(false); setVErr('') }}>Volunteer with us</button>
             <button className="nav-text-btn" onClick={() => { setShowInterest(true); setIDone(false); setIErr('') }}>Just have questions?</button>
             <a href={REGISTRATION_DONATION_URL} target="_blank" rel="noreferrer" className="nav-text-btn">Donate</a>
             <a href="/#register" className="nav-cta">Register</a>
           </div>
         </div>
       </nav>
+      {showVol && (
+        <div className="vol-overlay" onClick={() => setShowVol(false)}>
+          <div className="vol-modal" onClick={(e) => e.stopPropagation()}>
+            {vDone ? (
+              <div style={{ textAlign: 'center', padding: '10px 4px' }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>🙌</div>
+                <h3 style={{ marginBottom: 8 }}>Thank you, {vForm.name.split(' ')[0]}!</h3>
+                <p style={{ color: 'var(--ink-soft)', fontSize: 15 }}>Corrie will reach out about serving with Shine.</p>
+                <button className="btn-primary" style={{ marginTop: 18 }} onClick={() => setShowVol(false)}>Close</button>
+              </div>
+            ) : (
+              <>
+                <h3 style={{ marginBottom: 4 }}>Volunteer with Shine</h3>
+                <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 18 }}>Tell us a little about you and Corrie will be in touch.</p>
+                {vErr && <div className="vol-err">{vErr}</div>}
+                <div className="vol-fg"><label>Your name</label><input value={vForm.name} onChange={setV('name')} placeholder="Name" /></div>
+                <div className="vol-fg"><label>Email</label><input type="email" value={vForm.email} onChange={setV('email')} placeholder="you@email.com" /></div>
+                <div className="vol-fg"><label>Phone</label><input type="tel" value={vForm.phone} onChange={setV('phone')} placeholder="(000) 000-0000" /></div>
+                <div className="vol-fg"><label>How would you like to help? (optional)</label><textarea value={vForm.message} onChange={setV('message')} rows={3} placeholder="Greeter, Class Helper, Unlock on Monday, etc." /></div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
+                  <button className="btn-outline" onClick={() => setShowVol(false)}>Cancel</button>
+                  <button className="btn-primary" onClick={submitVolunteer} disabled={vBusy}>{vBusy ? 'Sending…' : 'Send'}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {showInterest && (
         <div className="vol-overlay" onClick={() => setShowInterest(false)}>
           <div className="vol-modal" onClick={(e) => e.stopPropagation()}>
@@ -269,6 +323,11 @@ function Mission() {
 function Schedule() {
   const [days, setDays] = useState(FALLBACK_SCHEDULE)
   const [live, setLive] = useState(false)
+  // "List" and the old "Weekly calendar" view were nearly identical —
+  // both were just classes grouped by day, styled slightly differently.
+  // Keeping the List layout under the name Corrie wants, and building an
+  // actual grid (time rows × day columns, like a printed schedule) as the
+  // genuinely different second option.
   const [view, setView] = useState('list')
 
   useEffect(() => {
@@ -314,6 +373,14 @@ function Schedule() {
 
   const orderedDays = Object.keys(days).sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
 
+  // Grid view: one row per distinct start time across the whole schedule,
+  // one column per day that actually has classes. A class lands in the row
+  // matching its own start time, in its day's column — same idea as a
+  // printed studio schedule / spreadsheet.
+  const timeSlots = [...new Set(orderedDays.flatMap((d) => days[d].map((c) => c.sortKey)))]
+    .sort((a, b) => a - b)
+    .map((sortKey) => ({ sortKey, label: orderedDays.flatMap((d) => days[d]).find((c) => c.sortKey === sortKey)?.time?.split('–')[0]?.trim() || '' }))
+
   return (
     <Reveal className="section" id="classes">
       <div className="section-head">
@@ -322,24 +389,41 @@ function Schedule() {
         <p>Ballet, tap, and more, from PreBallet for our youngest dancers up through Ballet III and Pointe.</p>
       </div>
       <div className="view-toggle">
-        <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>List</button>
-        <button className={view === 'week' ? 'active' : ''} onClick={() => setView('week')}>Weekly calendar</button>
+        <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>Weekly Calendar</button>
+        <button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')}>Grid</button>
       </div>
-      {view === 'week' ? (
-        <div className="week-grid">
-          {orderedDays.map((day) => (
-            <div className="week-col" key={day}>
-              <div className="week-day">{day}</div>
-              {days[day].map((c, i) => (
-                <div className={`week-class ${c.full ? 'full' : ''}`} key={i}>
-                  <div className="wc-time">{c.time}</div>
-                  <div className="wc-name">{c.name}</div>
-                  {c.age && <div className="wc-age">{c.age}</div>}
-                  {c.full && <div className="wc-full">Waitlist</div>}
-                </div>
+      {view === 'grid' ? (
+        <div className="sched-grid-wrap">
+          <table className="sched-grid">
+            <thead>
+              <tr>
+                <th></th>
+                {orderedDays.map((day) => <th key={day}>{day}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {timeSlots.map((slot) => (
+                <tr key={slot.sortKey}>
+                  <td className="sched-grid-time">{slot.label}</td>
+                  {orderedDays.map((day) => {
+                    const classesHere = days[day].filter((c) => c.sortKey === slot.sortKey)
+                    return (
+                      <td key={day}>
+                        {classesHere.map((c, i) => (
+                          <div key={i} className={`sched-grid-cell ${c.full ? 'full' : ''}`}>
+                            <div className="sgc-name">{c.name}</div>
+                            {c.age && <div className="sgc-age">{c.age}</div>}
+                            <div className="sgc-time">{c.time}</div>
+                            {c.full && <div className="sgc-full">Waitlist</div>}
+                          </div>
+                        ))}
+                      </td>
+                    )
+                  })}
+                </tr>
               ))}
-            </div>
-          ))}
+            </tbody>
+          </table>
         </div>
       ) : (
       <div className="sched-days">
@@ -452,7 +536,7 @@ function Support() {
           <p>Shine is free for every family because people give their time and resources. If you feel led, you can give through Granada Heights Friends Church, or serve alongside us — we always welcome dance teachers, sign-in helpers, and volunteers.</p>
         </div>
         <div className="support-actions">
-          <a href={GIVE_URL} target="_blank" rel="noreferrer" className="btn-primary">Give through GHFC</a>
+          <a href={REGISTRATION_DONATION_URL} target="_blank" rel="noreferrer" className="btn-primary">Donate to Shine</a>
           <button className="btn-outline" onClick={() => { setShowForm(true); setDone(false); setErr('') }}>Volunteer with us</button>
         </div>
       </Reveal>
@@ -474,7 +558,7 @@ function Support() {
                 <div className="vol-fg"><label>Your name</label><input value={form.name} onChange={set('name')} placeholder="Name" /></div>
                 <div className="vol-fg"><label>Email</label><input type="email" value={form.email} onChange={set('email')} placeholder="you@email.com" /></div>
                 <div className="vol-fg"><label>Phone</label><input type="tel" value={form.phone} onChange={set('phone')} placeholder="(000) 000-0000" /></div>
-                <div className="vol-fg"><label>How would you like to help? (optional)</label><textarea value={form.message} onChange={set('message')} rows={3} placeholder="Teaching, sign-in help, etc." /></div>
+                <div className="vol-fg"><label>How would you like to help? (optional)</label><textarea value={form.message} onChange={set('message')} rows={3} placeholder="Greeter, Class Helper, Unlock on Monday, etc." /></div>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
                   <button className="btn-outline" onClick={() => setShowForm(false)}>Cancel</button>
                   <button className="btn-primary" onClick={submit} disabled={busy}>{busy ? 'Sending…' : 'Send'}</button>
@@ -759,6 +843,7 @@ function Register() {
       first_name: form.student_first_name.trim(),
       last_name: form.student_last_name.trim(),
       grade: form.student_grade.trim() || null,
+      age: form.student_age.trim() || null,
       birthday: form.student_birthday || null,
       family_id: fam?.id || null,
       // Active if they matched at least one real class (so they show up on
@@ -767,7 +852,6 @@ function Register() {
       // knows to follow up via the Inactive filter or the Registrations log.
       season_status: matchedClasses.length ? 'active' : 'inactive',
       notes: [
-        form.student_age ? `Age at registration: ${form.student_age}.` : '',
         meetingNote ? `Parent meeting selected at registration: ${meetingNote}.` : '',
         form.is_returning === 'returning' ? 'Registered as a returning student.' : 'Registered as a new student.',
       ].filter(Boolean).join(' ') || null,

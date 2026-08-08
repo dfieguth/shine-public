@@ -90,6 +90,20 @@ button{font-family:inherit;cursor:pointer}
 .sched-days{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}
 .day-col{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .day-head{background:var(--pine);color:#fff;padding:14px 20px;font-family:var(--font-display);font-size:19px;font-weight:600}
+/* Schedule Grid view — a real time-row × day-column matrix, like a printed
+   studio schedule, distinct from the day-list layout above. */
+.sched-grid-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper)}
+.sched-grid{width:100%;border-collapse:collapse;min-width:640px}
+.sched-grid th{background:var(--pine);color:#fff;font-family:var(--font-display);font-size:15px;font-weight:600;padding:12px 10px;text-align:center;position:sticky;top:0}
+.sched-grid td{border:1px solid var(--line);vertical-align:top;padding:6px;min-width:120px}
+.sched-grid-time{background:var(--cream);font-weight:600;font-size:13px;color:var(--pine);text-align:center;white-space:nowrap;min-width:70px!important}
+.sched-grid-cell{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 9px;margin-bottom:6px}
+.sched-grid-cell.full{background:#fdf1dd;border-color:#e8cf9f}
+.sched-grid-cell:last-child{margin-bottom:0}
+.sgc-name{font-weight:600;font-size:13.5px;color:var(--ink)}
+.sgc-age{font-size:11.5px;color:var(--brass);font-weight:600}
+.sgc-time{font-size:11.5px;color:var(--ink-soft)}
+.sgc-full{font-size:11px;font-weight:700;color:#a3741f;margin-top:2px}
 .day-body{padding:8px 0}
 .class-row{padding:13px 20px;border-bottom:1px solid var(--line);transition:background .15s}
 .class-row:last-child{border-bottom:none}
