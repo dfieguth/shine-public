@@ -641,6 +641,7 @@ const BLANK_FORM = {
   parent_first_name: '', parent_last_name: '', email: '', phone: '',
   student_first_name: '', student_last_name: '', student_grade: '', student_age: '', student_birthday: '',
   secondary_parent_name: '', secondary_parent_email: '', secondary_parent_phone: '',
+  tertiary_parent_name: '', tertiary_parent_email: '', tertiary_parent_phone: '',
   emergency_contact_name: '', emergency_contact_relationship: '', emergency_contact_phone: '',
   interested_classes: [], not_sure: false,
   heard_about: '', heard_about_other: '',
@@ -786,6 +787,9 @@ function Register() {
       secondary_parent_name: form.secondary_parent_name.trim() || null,
       secondary_parent_email: form.secondary_parent_email.trim() || null,
       secondary_parent_phone: form.secondary_parent_phone.trim() || null,
+      tertiary_parent_name: form.tertiary_parent_name.trim() || null,
+      tertiary_parent_email: form.tertiary_parent_email.trim() || null,
+      tertiary_parent_phone: form.tertiary_parent_phone.trim() || null,
       emergency_contact_name: form.emergency_contact_name.trim() || null,
       emergency_contact_relationship: form.emergency_contact_relationship.trim() || null,
       emergency_contact_phone: form.emergency_contact_phone.trim() || null,
@@ -828,6 +832,9 @@ function Register() {
       secondary_parent_name: form.secondary_parent_name.trim() || null,
       secondary_parent_email: form.secondary_parent_email.trim() || null,
       secondary_parent_phone: form.secondary_parent_phone.trim() || null,
+      tertiary_parent_name: form.tertiary_parent_name.trim() || null,
+      tertiary_parent_email: form.tertiary_parent_email.trim() || null,
+      tertiary_parent_phone: form.tertiary_parent_phone.trim() || null,
       emergency_contact_name: form.emergency_contact_name.trim() || null,
       emergency_contact_relationship: form.emergency_contact_relationship.trim() || null,
       emergency_contact_phone: form.emergency_contact_phone.trim() || null,
@@ -1032,6 +1039,17 @@ function Register() {
               <div className="fg2">
                 <div className="fg"><label>Email</label><input type="email" placeholder="Optional" value={form.secondary_parent_email} onChange={set('secondary_parent_email')} /></div>
                 <div className="fg"><label>Phone</label><input type="tel" placeholder="Optional" value={form.secondary_parent_phone} onChange={set('secondary_parent_phone')} /></div>
+              </div>
+
+              <p className="form-section-label">Additional Family Member / Guardian (optional)</p>
+              <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: -6, marginBottom: 10 }}>For a grandparent or other caregiver who should also be kept in the loop.</p>
+              <div className="fg">
+                <label>Name</label>
+                <input type="text" placeholder="Optional" value={form.tertiary_parent_name} onChange={set('tertiary_parent_name')} />
+              </div>
+              <div className="fg2">
+                <div className="fg"><label>Email</label><input type="email" placeholder="Optional" value={form.tertiary_parent_email} onChange={set('tertiary_parent_email')} /></div>
+                <div className="fg"><label>Phone</label><input type="tel" placeholder="Optional" value={form.tertiary_parent_phone} onChange={set('tertiary_parent_phone')} /></div>
               </div>
 
               <p className="form-section-label">Emergency Contact (other than a parent)</p>
