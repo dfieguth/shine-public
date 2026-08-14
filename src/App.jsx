@@ -924,8 +924,20 @@ function Register() {
     //    any reason, the family's registration and enrollment have ALREADY
     //    completed successfully above, and they still see their real
     //    confirmation screen. Email trouble must never cost someone a spot.
+    //
+    //    THE FIX (this round): this used to only catch a NETWORK failure
+    //    (fetch() throwing) and otherwise assume success. It never actually
+    //    read the response — so when the function correctly detected and
+    //    reported a failed send (a 500 with ok:false), nothing here ever
+    //    noticed. Combined with the function itself not logging anything
+    //    (fixed the same round), a real, correctly-caught email failure was
+    //    completely invisible on both ends. Now: read the response, and if
+    //    it reports failure, log it loudly so it shows up in the browser
+    //    console during a live test. Still deliberately never blocks or
+    //    changes the confirmation screen — a failed email is Corrie's and
+    //    my problem to notice and fix, never the registering family's.
     try {
-      await fetch('/.netlify/functions/notify-registration', {
+      const emailRes = await fetch('/.netlify/functions/notify-registration', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -937,7 +949,15 @@ function Register() {
           meeting_labels: { aug28: sc.meeting_aug28_label, sep3: sc.meeting_sep3_label },
         }),
       })
-    } catch { /* registration already succeeded — nothing to undo */ }
+      if (!emailRes.ok) {
+        let detail = ''
+        try { detail = (await emailRes.json())?.error || '' } catch { /* body wasn't JSON */ }
+        console.error(`Registration: notify-registration reported failure (HTTP ${emailRes.status}) for student "${regRow.student_name}" —`, detail || '(no error detail returned)')
+      }
+    } catch (e) {
+      console.error('Registration: could not reach notify-registration at all (network/connection failure) —', e)
+      /* registration already succeeded — nothing to undo, this is visibility only */
+    }
 
     setOutcomes(results)
     setBusy(false)
