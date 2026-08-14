@@ -26,6 +26,7 @@ export const handler = async (event) => {
   const notifyTo = process.env.NOTIFY_EMAIL || gmailAddress
 
   if (!gmailAddress || !gmailAppPassword) {
+    console.error('notify-registration: missing GMAIL_ADDRESS or GMAIL_APP_PASSWORD env vars')
     return json(500, { ok: false, error: 'Email not configured' })
   }
 
@@ -114,6 +115,11 @@ export const handler = async (event) => {
         ${adminLines.map((l) => (l === '' ? '<br>' : `<div>${escapeHtml(l)}</div>`)).join('')}`),
     })
   } catch (e) {
+    // THE FIX: this used to be caught and silently added to `problems`
+    // with nothing ever printed anywhere. console.error is what actually
+    // makes a failure show up in Netlify's function logs — without this,
+    // a real, correctly-detected failure was completely invisible.
+    console.error(`notify-registration: admin alert email failed for student "${studentName}" —`, e)
     problems.push(`admin: ${msg(e)}`)
   }
 
@@ -191,11 +197,15 @@ export const handler = async (event) => {
           <p style="margin:0">Grace and Peace,<br>Corrie Villa</p>`),
       })
     } catch (e) {
+      console.error(`notify-registration: parent confirmation email failed for "${parentEmail}" (student "${studentName}") —`, e)
       problems.push(`parent: ${msg(e)}`)
     }
   }
 
-  if (problems.length) return json(500, { ok: false, error: problems.join(' | ') })
+  if (problems.length) {
+    console.error(`notify-registration: completed with ${problems.length} problem(s) — ${problems.join(' | ')}`)
+    return json(500, { ok: false, error: problems.join(' | ') })
+  }
   return json(200, { ok: true })
 }
 
