@@ -13,8 +13,24 @@
 //   GMAIL_ADDRESS        shineGHFC@gmail.com
 //   GMAIL_APP_PASSWORD   the 16-character app password, NO SPACES
 //   NOTIFY_EMAIL         where Corrie's alert goes (defaults to GMAIL_ADDRESS)
+//   ALLOWED_ORIGIN        optional. If set (e.g. https://shine.example.org),
+//                         requests whose Origin/Referer header doesn't match
+//                         are rejected. Left unset, this check is skipped
+//                         entirely — nothing changes until this is added.
+//
+// A NOTE ON ABUSE: this endpoint has to stay unauthenticated — it's called
+// by anonymous registrants — so it can't have a real auth check. That does
+// mean anyone who finds the URL could POST directly and make the church's
+// Gmail send email to addresses of their choosing. The checks below (empty-
+// field rejection, optional origin check, field-length truncation, outcomes
+// cap) raise the bar against casual/scripted abuse but won't stop a
+// determined attacker forging headers. A real fix (CAPTCHA on the form,
+// Netlify's rate-limiting product, etc.) is a bigger decision Devin hasn't
+// made yet — flagging it here rather than pretending this closes the gap.
 
 import nodemailer from 'nodemailer'
+
+const MAX_LEN = 300 // generous for any real name/class field; blocks junk payloads
 
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -24,10 +40,19 @@ export const handler = async (event) => {
   const gmailAddress = process.env.GMAIL_ADDRESS
   const gmailAppPassword = process.env.GMAIL_APP_PASSWORD
   const notifyTo = process.env.NOTIFY_EMAIL || gmailAddress
+  const allowedOrigin = process.env.ALLOWED_ORIGIN
 
   if (!gmailAddress || !gmailAppPassword) {
     console.error('notify-registration: missing GMAIL_ADDRESS or GMAIL_APP_PASSWORD env vars')
     return json(500, { ok: false, error: 'Email not configured' })
+  }
+
+  if (allowedOrigin) {
+    const origin = event.headers.origin || event.headers.referer || event.headers.Referer || ''
+    if (origin && !origin.startsWith(allowedOrigin)) {
+      console.error(`notify-registration: rejected request from unexpected origin "${origin}"`)
+      return json(403, { ok: false, error: 'Forbidden' })
+    }
   }
 
   let body
@@ -38,7 +63,22 @@ export const handler = async (event) => {
   }
 
   const r = body.record || {}
-  const outcomes = Array.isArray(body.outcomes) ? body.outcomes : []
+  const outcomes = Array.isArray(body.outcomes) ? body.outcomes.slice(0, 50) : []
+
+  // This endpoint has to stay public — anonymous registrants call it
+  // directly, so there's no login to check the way send-broadcast.mjs
+  // checks one. This is NOT real protection against a determined abuser
+  // (nothing here stops someone from finding this URL and POSTing to it
+  // directly with fabricated data), but it's a cheap floor: reject
+  // obviously-empty submissions before doing any work, rather than happily
+  // sending mail for a payload with no actual registrant in it. If real
+  // abuse becomes a problem, the right fix is Netlify's own dashboard-level
+  // rate limiting on this path, not more logic in this file — check
+  // Netlify's current docs for that, since the exact config has changed
+  // over time and isn't something to guess at here.
+  if (!str(r.parent_name) || !str(r.student_name)) {
+    return json(400, { ok: false, error: 'Missing required registrant info' })
+  }
 
   const parentName = str(r.parent_name) || 'A parent'
   const studentName = str(r.student_name) || 'a student'
@@ -218,7 +258,8 @@ function wrapHtml(inner) {
 }
 
 function str(v) {
-  return v === null || v === undefined ? '' : String(v).trim()
+  const s = v === null || v === undefined ? '' : String(v).trim()
+  return s.length > MAX_LEN ? s.slice(0, MAX_LEN) : s
 }
 
 function msg(e) {
