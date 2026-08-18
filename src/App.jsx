@@ -34,19 +34,6 @@ const FALLBACK_SCHEDULE = {
   ],
 }
 
-const CLASS_OPTIONS = [
-  'Not sure yet — help me choose',
-  'PreBallet (ages 5–6)',
-  'Ballet IA (ages 7–9)',
-  'Ballet IB (ages 7–10)',
-  'Ballet I/II (ages 9+)',
-  'Ballet II (ages 9+)',
-  'Ballet III (ages 10+)',
-  'PrePointe (ages 12+)',
-  'Tap I/II (ages 9+)',
-  'Tap III (ages 10+)',
-]
-
 // Fetches admin-editable copy from the `site_content` table (Admin → Site
 // Content). Pass in the defaults for exactly the keys this component needs;
 // if the table is empty, unreachable, or missing a key, the default is used
@@ -329,15 +316,27 @@ function Schedule() {
   // actual grid (time rows × day columns, like a printed schedule) as the
   // genuinely different second option.
   const [view, setView] = useState('list')
+  // Tracks whether the live fetch actually failed, as distinct from still
+  // loading. Without this, a failed fetch silently leaves FALLBACK_SCHEDULE
+  // on screen — a hardcoded class list that Corrie can't edit and that goes
+  // stale the moment she changes anything in the admin (or runs a season
+  // rollover). Parents would read it as current fact with no signal
+  // otherwise. The "Schedule is live" badge already correctly hides itself
+  // in that case, but its absence is far too subtle to notice.
+  const [scheduleFailed, setScheduleFailed] = useState(false)
 
   useEffect(() => {
-    if (!supabase) return
+    if (!supabase) { setScheduleFailed(true); return }
     ;(async () => {
       const [{ data: rawData, error }, { data: counts }] = await Promise.all([
         supabase.from('classes').select('id, name, level, day_of_week, start_time, end_time, capacity, min_age, max_age, season').eq('active', true),
         supabase.rpc('class_enrollment_counts'),
       ])
-      if (error || !rawData || rawData.length === 0) return
+      if (error || !rawData || rawData.length === 0) {
+        console.error('Schedule: could not load live classes, falling back to the hardcoded schedule —', error)
+        setScheduleFailed(true)
+        return
+      }
       // Only show the most recent season on the public schedule so old
       // years don't linger after a rollover.
       const seasons = [...new Set(rawData.map((c) => c.season || ''))].sort().reverse()
@@ -443,6 +442,11 @@ function Schedule() {
       </div>
       )}
       {live && <span className="live-dot"><i /> Schedule is live — updates the moment a leader makes a change</span>}
+      {scheduleFailed && (
+        <p style={{ fontSize: 13.5, color: '#b23838', marginTop: 12 }}>
+          We couldn't load the current schedule just now, so the times above may be out of date. Please email Corrie at shineGHFC@gmail.com to confirm before making plans.
+        </p>
+      )}
       <p className="sched-note">Don't see a fit, or not sure where your dancer belongs? <a href="#register">Reach out</a> and we'll help you find the right class.</p>
     </Reveal>
   )
@@ -672,17 +676,18 @@ function Register() {
   const [done, setDone] = useState(false)
   const [err, setErr] = useState('')
   const [liveClasses, setLiveClasses] = useState(null)
+  const [classesLoadFailed, setClassesLoadFailed] = useState(false)
 
   const [outcomes, setOutcomes] = useState([]) // per-class result shown on confirmation
 
   useEffect(() => {
-    if (!supabase) return
+    if (!supabase) { setClassesLoadFailed(true); return }
     ;(async () => {
       const [{ data: cls }, { data: counts }] = await Promise.all([
         supabase.from('classes').select('id, name, level, capacity, day_of_week, start_time, end_time, min_age, max_age').eq('active', true).order('name'),
         supabase.rpc('class_enrollment_counts'),
       ])
-      if (!cls || !cls.length) return
+      if (!cls || !cls.length) { setClassesLoadFailed(true); return }
       const map = {}
       for (const r of counts || []) map[r.class_id] = Number(r.enrolled)
       const withDetails = cls.map((c) => {
@@ -843,6 +848,22 @@ function Register() {
     const fam = famErr ? null : { id: famId }
     if (famErr) console.error('Registration: family insert failed —', famErr)
 
+    // THE FIX: this used to proceed regardless of famErr — if the family
+    // insert failed but the student insert that follows happened to
+    // succeed, the code would create a student with family_id: null and
+    // then show a completely normal "You're in!" screen and send a real
+    // confirmation email. That's a child correctly enrolled in the
+    // database with ZERO linked parent contact info — no name, no email,
+    // no phone, no emergency contact, all of which live only on the
+    // families table. Treating this exactly as fatally as a failed student
+    // insert (see the hard-failure block below) closes that gap.
+    if (!fam) {
+      console.error('Registration: no family record was created — aborting before student/enrollment/confirmation.')
+      setErr('Something went wrong saving your registration, and your dancer was NOT added. Please email Corrie directly at shineGHFC@gmail.com so she can add your dancer by hand. Sorry for the hassle!')
+      setBusy(false)
+      return
+    }
+
     const meetingNote = [form.meeting_aug28 && 'Aug 28 meeting', form.meeting_sep3 && 'Sep 3 meeting'].filter(Boolean).join(' + ')
     const stuId = crypto.randomUUID()
     const { error: stuErr } = await supabase.from('students').insert({
@@ -852,7 +873,7 @@ function Register() {
       grade: form.student_grade.trim() || null,
       age: form.student_age.trim() || null,
       birthday: form.student_birthday || null,
-      family_id: fam?.id || null,
+      family_id: fam.id,
       // Active if they matched at least one real class (so they show up on
       // the default Students view right away). Inactive if they picked
       // "Not sure yet" or nothing matched a live class, so Corrie still
@@ -1108,22 +1129,38 @@ function Register() {
               <div id="field-interested_classes" className={`fg ${highlight === 'interested_classes' ? 'field-flash' : ''}`}>
                 <label>{sc.class_select_label} *</label>
                 <div className="class-check-list">
-                  {liveClasses
-                    ? liveClasses.map((c) => (
-                        <label key={c.id} className="class-check-row">
-                          <input type="checkbox" checked={form.interested_classes.includes(c.id)} onChange={() => toggleClass(c.id)} disabled={form.not_sure} />
-                          <span>
-                            <strong>{c.name}</strong>{c.level ? ` (${c.level})` : ''}{c.full && <span className="full-tag" style={{ marginLeft: 6 }}>Full — waitlist</span>}
-                            <br /><span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{[c.when, c.ageRange].filter(Boolean).join(' · ')}</span>
-                          </span>
-                        </label>
-                      ))
-                    : CLASS_OPTIONS.slice(1).map((c) => (
-                        <label key={c} className="class-check-row">
-                          <input type="checkbox" checked={form.interested_classes.includes(c)} onChange={() => toggleClass(c)} disabled={form.not_sure} />
-                          <span>{c}</span>
-                        </label>
-                      ))}
+                  {liveClasses ? (
+                    liveClasses.map((c) => (
+                      <label key={c.id} className="class-check-row">
+                        <input type="checkbox" checked={form.interested_classes.includes(c.id)} onChange={() => toggleClass(c.id)} disabled={form.not_sure} />
+                        <span>
+                          <strong>{c.name}</strong>{c.level ? ` (${c.level})` : ''}{c.full && <span className="full-tag" style={{ marginLeft: 6 }}>Full — waitlist</span>}
+                          <br /><span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{[c.when, c.ageRange].filter(Boolean).join(' · ')}</span>
+                        </span>
+                      </label>
+                    ))
+                  ) : classesLoadFailed ? (
+                    // THE FIX: this used to show an interactive checkbox list
+                    // keyed by hardcoded NAME strings as a fallback (that
+                    // list has since been removed entirely). Since real submission matches classes by
+                    // database ID (fixed a few rounds back specifically to
+                    // stop duplicate-named classes from colliding), a
+                    // checkbox checked against this fake list could never
+                    // actually match a real class — it silently submitted as
+                    // "Not sure yet," with no indication anything went wrong.
+                    // Worse, this same fake list rendered during the NORMAL
+                    // loading window too (not just genuine failures), so a
+                    // parent who checked a box in the first moment a page
+                    // loaded could watch their own selection silently
+                    // uncheck itself once real data arrived. Now: nothing
+                    // clickable is shown unless it can actually be submitted
+                    // correctly.
+                    <p style={{ fontSize: 13.5, color: '#b23838', padding: '4px 2px' }}>
+                      We couldn't load the class list just now. Please check "I'm not sure" below, or email Corrie at shineGHFC@gmail.com so she can get your dancer signed up directly.
+                    </p>
+                  ) : (
+                    <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', padding: '4px 2px' }}>Loading classes…</p>
+                  )}
                 </div>
                 <label className="check" style={{ marginTop: 10 }}>
                   <input
@@ -1225,10 +1262,21 @@ function PolicyBody({ text }) {
 
 function PoliciesPage() {
   const [sections, setSections] = useState(null)
+  // Distinguishes "the fetch failed" from "there genuinely are no policies
+  // yet." Previously both rendered as "Nothing posted yet" — which is
+  // actively misleading here, not just unhelpful: the real policies include
+  // the mandatory parent meeting rule that determines whether a child stays
+  // on the roster. Telling a parent there's nothing to read when that rule
+  // exists is worse than showing an honest error.
+  const [loadFailed, setLoadFailed] = useState(false)
   useEffect(() => {
-    if (!supabase) { setSections([]); return }
+    if (!supabase) { setLoadFailed(true); setSections([]); return }
     ;(async () => {
-      const { data } = await supabase.from('policy_sections').select('*').eq('active', true).order('sort_order')
+      const { data, error } = await supabase.from('policy_sections').select('*').eq('active', true).order('sort_order')
+      if (error) {
+        console.error('PoliciesPage: could not load policy sections —', error)
+        setLoadFailed(true)
+      }
       setSections(data || [])
     })()
   }, [])
@@ -1242,6 +1290,8 @@ function PoliciesPage() {
           <h1>What to know before class starts</h1>
           {sections === null ? (
             <p className="policies-loading">Loading…</p>
+          ) : loadFailed ? (
+            <p style={{ color: '#b23838' }}>We couldn't load the policies right now. Please email Corrie at <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a> — there ARE policies to review before class starts, including a mandatory parent meeting, so please don't take this as "nothing to read."</p>
           ) : sections.length === 0 ? (
             <p>Nothing posted yet — check back soon, or email Corrie at shineGHFC@gmail.com with any questions.</p>
           ) : (

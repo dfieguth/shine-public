@@ -1,11 +1,11 @@
 /* Shine Dance Studio — public site
-   Navy + teal + mint, per Corrie'''s color reference (a navy/teal/mint
+   Navy + teal + mint, per Corrie's color reference (a navy/teal/mint
    balloon photo). Cream surfaces kept as a warm neutral background.
    Motion is restrained: hero zoom, scroll fade-ups, card lifts. */
 
 :root{
   --pine:#1c2250; --pine-dark:#12162f; --pine-deep:#0a0c1c;
-  --brass:#2e9db5; --brass-soft:#8fd9c4;
+  --brass:#2e9db5; --brass-dark:#227a8d; --brass-soft:#8fd9c4;
   --cream:#faf6ec; --paper:#fffdf8;
   --ink:#25302c; --ink-soft:#5f6f68;
   --line:#e7e1d3;
@@ -39,7 +39,7 @@ button{font-family:inherit;cursor:pointer}
 .nav-links a:hover{color:var(--brass)}
 .nav.solid .nav-links a:hover{color:var(--pine)}
 .nav-cta{background:var(--brass);color:#fff!important;padding:9px 18px;border-radius:30px;font-weight:500;font-size:14px;text-shadow:none!important}
-.nav-cta:hover{background:#c4842b}
+.nav-cta:hover{background:var(--brass-dark)}
 @media(max-width:760px){.nav-links a:not(.nav-cta){display:none}}
 
 /* ---------- Hero ---------- */
@@ -56,7 +56,7 @@ button{font-family:inherit;cursor:pointer}
 .hero p{font-size:20px;color:#f2ede2;max-width:34em;margin:0 auto 34px;text-shadow:0 1px 16px rgba(0,0,0,.4)}
 .hero-actions{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
 .btn-primary{background:var(--brass);color:#fff;padding:15px 30px;border-radius:32px;font-size:16px;font-weight:600;text-decoration:none;display:inline-block;transition:transform .1s,background .15s;box-shadow:0 8px 24px rgba(0,0,0,.25);border:none}
-.btn-primary:hover{background:#c4842b;transform:translateY(-1px)}
+.btn-primary:hover{background:var(--brass-dark);transform:translateY(-1px)}
 .btn-primary:disabled{opacity:.6;cursor:default;transform:none}
 .btn-ghost{border:1.5px solid rgba(255,255,255,.6);color:#fff;padding:15px 28px;border-radius:32px;font-size:16px;font-weight:500;text-decoration:none;transition:background .15s;backdrop-filter:blur(2px)}
 .btn-ghost:hover{background:rgba(255,255,255,.15)}
@@ -265,7 +265,7 @@ footer{background:var(--pine-deep);color:#bcd4cb;padding:52px 24px 34px}
 .outcome-when{color:var(--ink-soft);font-weight:400}
 .pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;white-space:nowrap}
 .pill.enrolled{background:#e6f4ec;color:#1f7a44}
-.pill.waitlist{background:#fdf1dd;color:#a3741f}
+.pill.waitlist{background:#fdf1dd;color:var(--brass-dark)}
 .pill.danger{background:#fdecec;color:#b23838}
 
 /* ---------- Policies & Forms page ---------- */
