@@ -16,11 +16,11 @@ If the Supabase environment variables are missing, the site still renders comple
 2. Copy `.env.example` to `.env` and fill in the same Supabase URL and anon key used by the shine-admin project. (Skip this to run in fallback mode.)
 3. `npm run dev`
 
-## Deploying to Vercel
+## Deploying to Netlify
 
-- Push to a GitHub repo, import in Vercel.
-- Add env vars `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
-- Deploy.
+- Push to a GitHub repo, import in Netlify ("Add new site" -> "Import an existing project").
+- Add env vars `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, and `NOTIFY_EMAIL` under Site configuration -> Environment variables.
+- Deploy. Vite only bakes environment variables in at build time, so if you add or change one later, trigger a fresh deploy for it to take effect.
 
 The database's row-level security (from the admin project's `schema.sql`) already allows the public to read active classes and insert registrations, and nothing else. No additional configuration needed.
 
