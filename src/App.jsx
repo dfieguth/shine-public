@@ -1224,6 +1224,7 @@ function Footer() {
           <a href="/#register">Register a dancer</a>
           <a href="/#classes">View classes</a>
           <a href="/policies">Policies &amp; Forms</a>
+          <a href="/tickets">Recital Tickets</a>
           <a href={REGISTRATION_DONATION_URL} target="_blank" rel="noreferrer">Donate to Shine</a>
           {/* "Give through GHFC (general)" link removed per Corrie/Julieanne
               feedback — the church's general giving page currently has no
@@ -1256,6 +1257,189 @@ function PolicyBody({ text }) {
         }
         return <p key={i}>{lines.join(' ')}</p>
       })}
+    </>
+  )
+}
+
+const BLANK_TICKET_FORM = { parent_name: '', email: '', phone: '', student_name: '', show_id: '', ticket_count: '2' }
+
+function TicketsPage() {
+  const [shows, setShows] = useState(null)
+  const [settings, setSettings] = useState(null)
+  const [loadErr, setLoadErr] = useState('')
+  const [form, setForm] = useState(BLANK_TICKET_FORM)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [done, setDone] = useState(false)
+  const [outcome, setOutcome] = useState(null) // { status: 'confirmed' | 'waitlist', showName }
+
+  useEffect(() => {
+    if (!supabase) { setLoadErr('not configured'); setShows([]); return }
+    ;(async () => {
+      const [s, st] = await Promise.all([
+        supabase.from('recital_shows').select('*').eq('active', true).order('sort_order').order('show_date'),
+        supabase.from('recital_settings').select('*').eq('id', 1).maybeSingle(),
+      ])
+      if (s.error) { console.error('TicketsPage: could not load shows —', s.error); setLoadErr(s.error.message) }
+      setShows(s.data || [])
+      setSettings(st.data || null)
+    })()
+  }, [])
+
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+
+  async function submit() {
+    setErr('')
+    if (!form.parent_name.trim()) { setErr('Please add your name.'); return }
+    if (!form.email.trim()) { setErr('Please add your email.'); return }
+    if (!form.phone.trim()) { setErr('Please add your phone number.'); return }
+    if (!form.student_name.trim()) { setErr('Please add your dancer\'s name.'); return }
+    if (!form.show_id) { setErr('Please select a show.'); return }
+    const count = Number(form.ticket_count)
+    if (!count || count < 1 || count > 6) { setErr('Please choose between 1 and 6 tickets.'); return }
+    if (!supabase) { setErr('Reservations aren\'t connected yet. Please email Corrie at shineGHFC@gmail.com and she\'ll get you set up.'); return }
+    setBusy(true)
+
+    const released = !!settings?.released
+
+    // Performers-only eligibility check — only enforced before release.
+    // A soft, name-based check (see is_recital_family in the database),
+    // not a hard login-based one — consistent with how registration
+    // itself never requires an account either.
+    if (!released) {
+      const { data: eligible, error: elErr } = await supabase.rpc('is_recital_family', { check_name: form.student_name.trim() })
+      if (elErr) {
+        console.error('TicketsPage: eligibility check failed —', elErr)
+        setErr('Something went wrong checking eligibility. Please try again, or email Corrie directly.')
+        setBusy(false); return
+      }
+      if (!eligible) {
+        setErr(`We couldn't find a dancer named "${form.student_name}" in a recital-participating class. Reservations are currently open to performing families only — double-check the spelling, or check back once reservations open to everyone.`)
+        setBusy(false); return
+      }
+    }
+
+    // 6-per-family cap, enforced cumulatively across separate visits to
+    // this form — checked by email, not by any login or matched record.
+    const capacityMode = settings?.capacity_mode || 'per_show'
+    const capCheckShowId = capacityMode === 'per_show' ? form.show_id : null
+    const { data: alreadyHave, error: capErr } = await supabase.rpc('ticket_count_for_email', { check_email: form.email.trim(), check_show_id: capCheckShowId })
+    if (capErr) {
+      console.error('TicketsPage: family cap check failed —', capErr)
+      setErr('Something went wrong. Please try again, or email Corrie directly.')
+      setBusy(false); return
+    }
+    const have = Number(alreadyHave) || 0
+    if (have + count > 6) {
+      setErr(`You've already reserved ${have} ticket${have === 1 ? '' : 's'}${capacityMode === 'per_show' ? ' for this show' : ' total'} — 6 is the max per family. You can request up to ${Math.max(0, 6 - have)} more.`)
+      setBusy(false); return
+    }
+
+    // Real-time capacity check, right before saving — decides confirmed
+    // vs. waitlist. Same "check again right at the moment of saving"
+    // principle already used for class capacity, so two people reserving
+    // the last few seats at nearly the same moment can't both get
+    // confirmed past the real limit.
+    const chosenShow = shows.find((s) => s.id === form.show_id)
+    let status = 'confirmed'
+    if (capacityMode === 'per_show') {
+      if (chosenShow?.capacity) {
+        const { data: counts } = await supabase.rpc('ticket_counts_by_show')
+        const current = Number((counts || []).find((c) => c.show_id === form.show_id)?.confirmed_count) || 0
+        if (current + count > chosenShow.capacity) status = 'waitlist'
+      }
+    } else if (settings?.combined_capacity) {
+      const { data: total } = await supabase.rpc('ticket_count_combined')
+      if ((Number(total) || 0) + count > settings.combined_capacity) status = 'waitlist'
+    }
+
+    const { error: insErr } = await supabase.from('ticket_reservations').insert({
+      show_id: form.show_id,
+      parent_name: form.parent_name.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      student_name: form.student_name.trim(),
+      ticket_count: count,
+      status,
+      phase: released ? 'release' : 'initial',
+    })
+    setBusy(false)
+    if (insErr) {
+      console.error('TicketsPage: reservation insert failed —', insErr)
+      setErr('Something went wrong saving your reservation. Please try again, or email Corrie directly at shineGHFC@gmail.com so she can add it by hand.')
+      return
+    }
+    setOutcome({ status, showName: chosenShow?.name || 'the show', ticketCount: count })
+    setDone(true)
+  }
+
+  return (
+    <>
+      <Nav />
+      <div className="policies-page">
+        <div className="policies-in">
+          <a href="/" className="policies-back">← Back to Shine</a>
+          <span className="eyebrow">Recital</span>
+          <h1>Reserve your recital tickets</h1>
+          {done ? (
+            <div className="form-card">
+              <div className="form-ok">
+                <div className="big">{outcome.status === 'confirmed' ? '🎟️' : '⏳'}</div>
+                <h3>{outcome.status === 'confirmed' ? "You're confirmed!" : "You're on the waitlist"}</h3>
+                {outcome.status === 'confirmed' ? (
+                  <p>{outcome.ticketCount} ticket{outcome.ticketCount === 1 ? '' : 's'} reserved for {outcome.showName}. We'll see you there!</p>
+                ) : (
+                  <p>{outcome.showName} is currently full for the {outcome.ticketCount} ticket{outcome.ticketCount === 1 ? '' : 's'} you requested. You're on the waitlist — if seats open up, Corrie will reach out.</p>
+                )}
+                <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 14 }}>Questions? Email Corrie at shineGHFC@gmail.com.</p>
+              </div>
+            </div>
+          ) : shows === null ? (
+            <p className="policies-loading">Loading…</p>
+          ) : loadErr ? (
+            <p style={{ color: '#b23838' }}>We couldn't load the shows right now. Please email Corrie at <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a> to reserve tickets directly.</p>
+          ) : shows.length === 0 ? (
+            <p>Shows haven't been set up yet — check back soon, or email Corrie at shineGHFC@gmail.com with any questions.</p>
+          ) : (
+            <div className="form-card">
+              {!settings?.released && (
+                <div style={{ background: '#fdf1dd', color: '#a3741f', fontSize: 14, padding: '10px 14px', borderRadius: 10, marginBottom: 16 }}>
+                  ✦ Reservations are currently open to performing families only. Everyone else can reserve once tickets are released.
+                </div>
+              )}
+              <h3>Reservation details</h3>
+              {err && <div className="form-err">{err}</div>}
+              <div className="fg2">
+                <div className="fg"><label>Your name *</label><input type="text" value={form.parent_name} onChange={set('parent_name')} /></div>
+                <div className="fg"><label>Dancer's name *</label><input type="text" value={form.student_name} onChange={set('student_name')} /></div>
+              </div>
+              <div className="fg2">
+                <div className="fg"><label>Email *</label><input type="email" value={form.email} onChange={set('email')} /></div>
+                <div className="fg"><label>Phone *</label><input type="tel" value={form.phone} onChange={set('phone')} /></div>
+              </div>
+              <div className="fg">
+                <label>Which show? *</label>
+                <select value={form.show_id} onChange={set('show_id')}>
+                  <option value="">Select a show…</option>
+                  {shows.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.show_date ? ` — ${new Date(s.show_date + 'T00:00').toLocaleDateString()}` : ''}{s.show_time ? ` ${s.show_time}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="fg">
+                <label>How many tickets? (6 max per family) *</label>
+                <select value={form.ticket_count} onChange={set('ticket_count')}>
+                  {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <button className="btn-primary" onClick={submit} disabled={busy}>{busy ? 'Reserving…' : 'Reserve tickets'}</button>
+            </div>
+          )}
+        </div>
+      </div>
+      <Footer />
     </>
   )
 }
@@ -1312,8 +1496,9 @@ function PoliciesPage() {
 
 export default function App() {
   const isPolicies = typeof window !== 'undefined' && window.location.pathname.replace(/\/$/, '') === '/policies'
+  const isTickets = typeof window !== 'undefined' && window.location.pathname.replace(/\/$/, '') === '/tickets'
   useEffect(() => {
-    if (isPolicies) return
+    if (isPolicies || isTickets) return
     let t1, t2
     const scrollToHash = () => {
       const hash = window.location.hash.replace('#', '')
@@ -1339,8 +1524,9 @@ export default function App() {
     scrollWithRetries()
     window.addEventListener('hashchange', scrollWithRetries)
     return () => { window.removeEventListener('hashchange', scrollWithRetries); clearTimeout(t1); clearTimeout(t2) }
-  }, [isPolicies])
+  }, [isPolicies, isTickets])
   if (isPolicies) return <PoliciesPage />
+  if (isTickets) return <TicketsPage />
   return (
     <>
       <Nav />
