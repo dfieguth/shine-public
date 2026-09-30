@@ -5,34 +5,8 @@ import heroPhoto from './assets/shine-hero.jpg'
 /* ============================================================
    Shine Dance Studio — public site
    Reads the live schedule from the same Supabase project as the
-   admin tool. If Supabase env vars are not set, it falls back to
-   the hardcoded schedule below so the site still renders fully.
+   admin tool.
    ============================================================ */
-
-// Real schedule from ghfc.org/connect/kids — used as fallback and
-// as the initial paint before the live data arrives.
-const FALLBACK_SCHEDULE = {
-  Monday: [
-    { name: 'PreBallet', age: 'ages 5–6', time: '3:45–4:15 PM' },
-    { name: 'Ballet II', age: 'ages 9+', time: '4:30–5:30 PM' },
-    { name: 'Tap I/II', age: 'ages 9+', time: '5:30–6:30 PM' },
-    { name: 'Tap III', age: 'ages 10+', time: '6:30–7:30 PM' },
-    { name: 'Deep Roots Bible Study', age: 'ages 10+', time: '5:30–6:15 PM' },
-  ],
-  Tuesday: [
-    { name: 'Ballet III', age: 'ages 10+', time: '3:30–4:30 PM' },
-    { name: 'PrePointe', age: 'ages 12+', time: '4:30–5:00 PM' },
-    { name: 'Ballet I/II', age: 'ages 9+', time: '5:00–6:00 PM' },
-  ],
-  Wednesday: [
-    { name: 'PreBallet', age: 'ages 5–6', time: '3:30–4:00 PM' },
-    { name: 'Ballet IA', age: 'ages 7–9', time: '4:00–4:45 PM' },
-  ],
-  Thursday: [
-    { name: 'Ballet III', age: 'ages 10+', time: '3:30–4:30 PM' },
-    { name: 'Ballet IB', age: 'ages 7–10', time: '4:30–5:30 PM' },
-  ],
-}
 
 // Fetches admin-editable copy from the `site_content` table (Admin → Site
 // Content). Pass in the defaults for exactly the keys this component needs;
@@ -66,8 +40,15 @@ function AnnouncementBanner() {
   useEffect(() => {
     if (!supabase) return
     ;(async () => {
-      const { data } = await supabase.from('announcements').select('title, message, starts_on, ends_on').eq('active', true)
-      const today = new Date().toISOString().slice(0, 10)
+      const { data, error } = await supabase.from('announcements').select('title, message, starts_on, ends_on').eq('active', true)
+      if (error) { console.error('AnnouncementBanner: could not load announcements —', error); return }
+      // Local calendar date, not UTC. toISOString() returns UTC, which in
+      // Pacific time rolls over to "tomorrow" in the late afternoon — so an
+      // announcement set to end today would vanish from the site around
+      // 5pm on its final day instead of at midnight. Same class of bug as
+      // the recital deadline one.
+      const now = new Date()
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
       setItems((data || []).filter((a) => (!a.starts_on || a.starts_on <= today) && (!a.ends_on || a.ends_on >= today)))
     })()
   }, [])
@@ -126,7 +107,7 @@ function Nav() {
       phone: vForm.phone.trim() || null, message: vForm.message.trim() || null,
     })
     setVBusy(false)
-    if (error) { setVErr('Something went wrong — please email shineGHFC@gmail.com.'); return }
+    if (error) { console.error('Nav: volunteer inquiry insert failed —', error); setVErr('Something went wrong — please email shineGHFC@gmail.com.'); return }
     setVDone(true)
   }
   useEffect(() => {
@@ -146,7 +127,7 @@ function Nav() {
       name: iForm.name.trim(), email: iForm.email.trim(), phone: iForm.phone.trim() || null, message: iForm.message.trim() || null,
     })
     setIBusy(false)
-    if (error) { setIErr('Something went wrong — please email shineGHFC@gmail.com.'); return }
+    if (error) { console.error('Nav: interest signup insert failed —', error); setIErr('Something went wrong — please email shineGHFC@gmail.com.'); return }
     setIDone(true)
   }
   return (
@@ -246,7 +227,9 @@ function Hero() {
           const url = supabase.storage.from(BUCKET).getPublicUrl('hero.jpg').data.publicUrl
           return url + '?v=' + Date.parse(hero.updated_at || hero.created_at || Date.now())
         }
-      } catch (_e) { /* fall through to bundled default */ }
+      } catch (e) {
+        console.error('Hero: could not resolve the uploaded hero photo, using the bundled one —', e)
+      }
       return heroPhoto
     }
     resolveUrl().then((url) => {
@@ -308,7 +291,18 @@ function Mission() {
 }
 
 function Schedule() {
-  const [days, setDays] = useState(FALLBACK_SCHEDULE)
+  // Starts as null (loading), NOT as a hardcoded schedule. This used to be
+  // seeded with a FALLBACK_SCHEDULE constant copied from the church website
+  // at some point in the past, which caused two real problems:
+  //   1. Every single page load painted that stale schedule first, before
+  //      the live data arrived — so every visitor saw a flash of class
+  //      names and times that were no longer accurate.
+  //   2. On a failed fetch it stayed on screen permanently, and the error
+  //      message below ("times above may be out of date") sat underneath a
+  //      full, confident-looking schedule that was simply wrong.
+  // Those times had genuinely drifted from the real classes. Showing
+  // nothing is better than showing a parent a class that doesn't exist.
+  const [days, setDays] = useState(null)
   const [live, setLive] = useState(false)
   // "List" and the old "Weekly calendar" view were nearly identical —
   // both were just classes grouped by day, styled slightly differently.
@@ -317,12 +311,7 @@ function Schedule() {
   // genuinely different second option.
   const [view, setView] = useState('list')
   // Tracks whether the live fetch actually failed, as distinct from still
-  // loading. Without this, a failed fetch silently leaves FALLBACK_SCHEDULE
-  // on screen — a hardcoded class list that Corrie can't edit and that goes
-  // stale the moment she changes anything in the admin (or runs a season
-  // rollover). Parents would read it as current fact with no signal
-  // otherwise. The "Schedule is live" badge already correctly hides itself
-  // in that case, but its absence is far too subtle to notice.
+  // loading — the two need to look completely different to a parent.
   const [scheduleFailed, setScheduleFailed] = useState(false)
 
   useEffect(() => {
@@ -333,7 +322,7 @@ function Schedule() {
         supabase.rpc('class_enrollment_counts'),
       ])
       if (error || !rawData || rawData.length === 0) {
-        console.error('Schedule: could not load live classes, falling back to the hardcoded schedule —', error)
+        console.error('Schedule: could not load live classes —', error)
         setScheduleFailed(true)
         return
       }
@@ -370,7 +359,7 @@ function Schedule() {
     })()
   }, [])
 
-  const orderedDays = Object.keys(days).sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
+  const orderedDays = days ? Object.keys(days).sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)) : []
 
   // Grid view: one row per distinct start time across the whole schedule,
   // one column per day that actually has classes. A class lands in the row
@@ -387,11 +376,19 @@ function Schedule() {
         <h2>Find the right class</h2>
         <p>Ballet, tap, and more, from PreBallet for our youngest dancers up through Ballet III and Pointe.</p>
       </div>
-      <div className="view-toggle">
-        <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>Weekly Calendar</button>
-        <button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')}>Grid</button>
-      </div>
-      {view === 'grid' ? (
+      {days && !scheduleFailed && (
+        <div className="view-toggle">
+          <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>Weekly Calendar</button>
+          <button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')}>Grid</button>
+        </div>
+      )}
+      {scheduleFailed ? (
+        <p style={{ fontSize: 14.5, color: '#b23838', textAlign: 'center', padding: '20px 0' }}>
+          We couldn't load the class schedule just now. Please email Corrie at <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a> and she'll be glad to walk you through the current classes.
+        </p>
+      ) : days === null ? (
+        <p style={{ color: 'var(--ink-soft)', textAlign: 'center', padding: '20px 0' }}>Loading the schedule…</p>
+      ) : view === 'grid' ? (
         <div className="sched-grid-wrap">
           <table className="sched-grid">
             <thead>
@@ -442,11 +439,6 @@ function Schedule() {
       </div>
       )}
       {live && <span className="live-dot"><i /> Schedule is live — updates the moment a leader makes a change</span>}
-      {scheduleFailed && (
-        <p style={{ fontSize: 13.5, color: '#b23838', marginTop: 12 }}>
-          We couldn't load the current schedule just now, so the times above may be out of date. Please email Corrie at shineGHFC@gmail.com to confirm before making plans.
-        </p>
-      )}
       <p className="sched-note">Don't see a fit, or not sure where your dancer belongs? <a href="#register">Reach out</a> and we'll help you find the right class.</p>
     </Reveal>
   )
@@ -502,12 +494,10 @@ function Instructors() {
   )
 }
 
-// Support Shine — donations flow through the church's own giving platform
-// (Pushpay), so gifts land on the church's books properly. Volunteering
-// mirrors the needs Corrie named: teachers, sign-in helpers, coordinators.
-const GIVE_URL = 'https://pushpay.com/g/ghfclamirada'
-// The registration donation flow uses Shine's own CCB form, not Pushpay,
-// per Corrie's confirmation.
+// Donations go through Shine's own CCB form, not the church's general
+// Pushpay page — per Corrie, the Pushpay page has no way to designate a
+// gift to Shine specifically. (A GIVE_URL constant pointing at Pushpay
+// used to sit here unused for exactly that reason; removed.)
 const REGISTRATION_DONATION_URL = 'https://granadaheightsfriendschurch.ccbchurch.com/goto/forms/303/responses/new'
 
 function Support() {
@@ -528,7 +518,7 @@ function Support() {
       phone: form.phone.trim() || null, message: form.message.trim() || null,
     })
     setBusy(false)
-    if (error) { setErr('Something went wrong — please email shineGHFC@gmail.com.'); return }
+    if (error) { console.error('Support: volunteer inquiry insert failed —', error); setErr('Something went wrong — please email shineGHFC@gmail.com.'); return }
     setDone(true)
   }
   return (
