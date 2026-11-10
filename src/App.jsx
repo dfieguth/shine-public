@@ -1278,6 +1278,11 @@ function TicketsPage() {
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
+  // Same rule the submit check uses below — released manually OR the
+  // automatic deadline has passed. Computed here too so the banner never
+  // says "performers-only" while reservations are actually open.
+  const isOpenToEveryone = !!settings?.released || (!!settings?.reservation_deadline && new Date(settings.reservation_deadline) <= new Date())
+
   async function submit() {
     setErr('')
     if (!form.parent_name.trim()) { setErr('Please add your name.'); return }
@@ -1290,7 +1295,13 @@ function TicketsPage() {
     if (!supabase) { setErr('Reservations aren\'t connected yet. Please email Corrie at shineGHFC@gmail.com and she\'ll get you set up.'); return }
     setBusy(true)
 
-    const released = !!settings?.released
+    // "Released" is true if EITHER the admin clicked the manual release
+    // button OR the automatic deadline has passed. This used to only check
+    // the manual flag, which meant setting a deadline in admin did nothing
+    // on its own — reservations would stay performers-only past the
+    // deadline unless someone also remembered to click the button.
+    const deadlinePassed = !!settings?.reservation_deadline && new Date(settings.reservation_deadline) <= new Date()
+    const released = !!settings?.released || deadlinePassed
 
     // Performers-only eligibility check — only enforced before release.
     // A soft, name-based check (see is_recital_family in the database),
@@ -1330,36 +1341,47 @@ function TicketsPage() {
     // principle already used for class capacity, so two people reserving
     // the last few seats at nearly the same moment can't both get
     // confirmed past the real limit.
+    //
+    // Partial fills are handled on purpose: if a family asks for 4 and
+    // only 2 seats remain, they get 2 confirmed and 2 on the waitlist,
+    // rather than all 4 waitlisted while 2 real seats sit empty. For a
+    // fixed-capacity recital, leaving seats unsold is the worse outcome.
     const chosenShow = shows.find((s) => s.id === form.show_id)
-    let status = 'confirmed'
+    let seatsLeft = null // null means no capacity limit configured
     if (capacityMode === 'per_show') {
       if (chosenShow?.capacity) {
         const { data: counts } = await supabase.rpc('ticket_counts_by_show')
         const current = Number((counts || []).find((c) => c.show_id === form.show_id)?.confirmed_count) || 0
-        if (current + count > chosenShow.capacity) status = 'waitlist'
+        seatsLeft = Math.max(0, chosenShow.capacity - current)
       }
     } else if (settings?.combined_capacity) {
       const { data: total } = await supabase.rpc('ticket_count_combined')
-      if ((Number(total) || 0) + count > settings.combined_capacity) status = 'waitlist'
+      seatsLeft = Math.max(0, settings.combined_capacity - (Number(total) || 0))
     }
 
-    const { error: insErr } = await supabase.from('ticket_reservations').insert({
+    const confirmedCount = seatsLeft === null ? count : Math.min(count, seatsLeft)
+    const waitlistCount = count - confirmedCount
+
+    const baseRow = {
       show_id: form.show_id,
       parent_name: form.parent_name.trim(),
       email: form.email.trim(),
       phone: form.phone.trim(),
       student_name: form.student_name.trim(),
-      ticket_count: count,
-      status,
       phase: released ? 'release' : 'initial',
-    })
+    }
+    const rowsToInsert = []
+    if (confirmedCount > 0) rowsToInsert.push({ ...baseRow, ticket_count: confirmedCount, status: 'confirmed' })
+    if (waitlistCount > 0) rowsToInsert.push({ ...baseRow, ticket_count: waitlistCount, status: 'waitlist' })
+
+    const { error: insErr } = await supabase.from('ticket_reservations').insert(rowsToInsert)
     setBusy(false)
     if (insErr) {
       console.error('TicketsPage: reservation insert failed —', insErr)
       setErr('Something went wrong saving your reservation. Please try again, or email Corrie directly at shineGHFC@gmail.com so she can add it by hand.')
       return
     }
-    setOutcome({ status, showName: chosenShow?.name || 'the show', ticketCount: count })
+    setOutcome({ confirmedCount, waitlistCount, showName: chosenShow?.name || 'the show', requested: count })
     setDone(true)
   }
 
@@ -1374,12 +1396,20 @@ function TicketsPage() {
           {done ? (
             <div className="form-card">
               <div className="form-ok">
-                <div className="big">{outcome.status === 'confirmed' ? '🎟️' : '⏳'}</div>
-                <h3>{outcome.status === 'confirmed' ? "You're confirmed!" : "You're on the waitlist"}</h3>
-                {outcome.status === 'confirmed' ? (
-                  <p>{outcome.ticketCount} ticket{outcome.ticketCount === 1 ? '' : 's'} reserved for {outcome.showName}. We'll see you there!</p>
+                <div className="big">{outcome.confirmedCount > 0 ? '🎟️' : '⏳'}</div>
+                <h3>
+                  {outcome.waitlistCount === 0
+                    ? "You're confirmed!"
+                    : outcome.confirmedCount === 0
+                      ? "You're on the waitlist"
+                      : "Partly confirmed"}
+                </h3>
+                {outcome.waitlistCount === 0 ? (
+                  <p>{outcome.confirmedCount} ticket{outcome.confirmedCount === 1 ? '' : 's'} reserved for {outcome.showName}. We'll see you there!</p>
+                ) : outcome.confirmedCount === 0 ? (
+                  <p>{outcome.showName} is currently full, so all {outcome.requested} ticket{outcome.requested === 1 ? '' : 's'} you requested are on the waitlist. If seats open up, Corrie will reach out.</p>
                 ) : (
-                  <p>{outcome.showName} is currently full for the {outcome.ticketCount} ticket{outcome.ticketCount === 1 ? '' : 's'} you requested. You're on the waitlist — if seats open up, Corrie will reach out.</p>
+                  <p>{outcome.showName} had room for {outcome.confirmedCount} of the {outcome.requested} tickets you requested — those {outcome.confirmedCount} {outcome.confirmedCount === 1 ? 'is' : 'are'} confirmed. The remaining {outcome.waitlistCount} {outcome.waitlistCount === 1 ? 'is' : 'are'} on the waitlist, and Corrie will reach out if more seats open up.</p>
                 )}
                 <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 14 }}>Questions? Email Corrie at shineGHFC@gmail.com.</p>
               </div>
@@ -1392,7 +1422,7 @@ function TicketsPage() {
             <p>Shows haven't been set up yet — check back soon, or email Corrie at shineGHFC@gmail.com with any questions.</p>
           ) : (
             <div className="form-card">
-              {!settings?.released && (
+              {!isOpenToEveryone && (
                 <div style={{ background: '#fdf1dd', color: '#a3741f', fontSize: 14, padding: '10px 14px', borderRadius: 10, marginBottom: 16 }}>
                   ✦ Reservations are currently open to performing families only. Everyone else can reserve once tickets are released.
                 </div>
