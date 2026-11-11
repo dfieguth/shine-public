@@ -1340,93 +1340,56 @@ function TicketsPage() {
     if (!supabase) { setErr('Reservations aren\'t connected yet. Please email Corrie at shineGHFC@gmail.com and she\'ll get you set up.'); return }
     setBusy(true)
 
-    // "Released" is true if EITHER the admin clicked the manual release
-    // button OR the automatic deadline has passed. This used to only check
-    // the manual flag, which meant setting a deadline in admin did nothing
-    // on its own — reservations would stay performers-only past the
-    // deadline unless someone also remembered to click the button.
-    const deadlinePassed = !!settings?.reservation_deadline && new Date(settings.reservation_deadline) <= new Date()
-    const released = !!settings?.released || deadlinePassed
-
-    // Performers-only eligibility check — only enforced before release.
-    // A soft, name-based check (see is_recital_family in the database),
-    // not a hard login-based one — consistent with how registration
-    // itself never requires an account either.
-    if (!released) {
-      const { data: eligible, error: elErr } = await supabase.rpc('is_recital_family', { check_name: form.student_name.trim() })
-      if (elErr) {
-        console.error('TicketsPage: eligibility check failed —', elErr)
-        setErr('Something went wrong checking eligibility. Please try again, or email Corrie directly.')
-        setBusy(false); return
-      }
-      if (!eligible) {
-        setErr(`We couldn't find a dancer named "${form.student_name}" in a recital-participating class. Reservations are currently open to performing families only — double-check the spelling, or check back once reservations open to everyone.`)
-        setBusy(false); return
-      }
-    }
-
-    // Per-family cap (set in the admin), enforced cumulatively across separate visits to
-    // this form — checked by email, not by any login or matched record.
-    const capacityMode = settings?.capacity_mode || 'per_show'
-    const capCheckShowId = capScope === 'per_show' ? form.show_id : null
-    const { data: alreadyHave, error: capErr } = await supabase.rpc('ticket_count_for_email', { check_email: form.email.trim(), check_show_id: capCheckShowId })
-    if (capErr) {
-      console.error('TicketsPage: family cap check failed —', capErr)
-      setErr('Something went wrong. Please try again, or email Corrie directly.')
-      setBusy(false); return
-    }
-    const have = Number(alreadyHave) || 0
-    if (have + count > maxPerFamily) {
-      setErr(`You've already reserved ${have} ticket${have === 1 ? '' : 's'}${capScope === 'per_show' ? ' for this show' : ' total'} — ${maxPerFamily} is the max per family. You can request up to ${Math.max(0, maxPerFamily - have)} more.`)
-      setBusy(false); return
-    }
-
-    // Real-time capacity check, right before saving — decides confirmed
-    // vs. waitlist. Same "check again right at the moment of saving"
-    // principle already used for class capacity, so two people reserving
-    // the last few seats at nearly the same moment can't both get
-    // confirmed past the real limit.
-    //
-    // Partial fills are handled on purpose: if a family asks for 4 and
-    // only 2 seats remain, they get 2 confirmed and 2 on the waitlist,
-    // rather than all 4 waitlisted while 2 real seats sit empty. For a
-    // fixed-capacity recital, leaving seats unsold is the worse outcome.
+    // The database does every check and saves the reservation in ONE
+    // step (reserve_tickets, migration 39): is the page open, is this a
+    // performing family, the per-family limit, and how many seats are
+    // left. Doing it there, one request at a time, is what stops several
+    // families from all being confirmed for the same last seats. Nothing
+    // is decided in the browser any more.
     const chosenShow = shows.find((s) => s.id === form.show_id)
-    let seatsLeft = null // null means no capacity limit configured
-    if (capacityMode === 'per_show') {
-      if (chosenShow?.capacity) {
-        const { data: counts } = await supabase.rpc('ticket_counts_by_show')
-        const current = Number((counts || []).find((c) => c.show_id === form.show_id)?.confirmed_count) || 0
-        seatsLeft = Math.max(0, chosenShow.capacity - current)
-      }
-    } else if (settings?.combined_capacity) {
-      const { data: total } = await supabase.rpc('ticket_count_combined')
-      seatsLeft = Math.max(0, settings.combined_capacity - (Number(total) || 0))
-    }
-
-    const confirmedCount = seatsLeft === null ? count : Math.min(count, seatsLeft)
-    const waitlistCount = count - confirmedCount
-
-    const baseRow = {
-      show_id: form.show_id,
-      parent_name: form.parent_name.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim(),
-      student_name: form.student_name.trim(),
-      phase: released ? 'release' : 'initial',
-    }
-    const rowsToInsert = []
-    if (confirmedCount > 0) rowsToInsert.push({ ...baseRow, ticket_count: confirmedCount, status: 'confirmed' })
-    if (waitlistCount > 0) rowsToInsert.push({ ...baseRow, ticket_count: waitlistCount, status: 'waitlist' })
-
-    const { error: insErr } = await supabase.from('ticket_reservations').insert(rowsToInsert)
+    const { data: result, error: rpcErr } = await supabase.rpc('reserve_tickets', {
+      p_show_id: form.show_id,
+      p_parent_name: form.parent_name.trim(),
+      p_email: form.email.trim(),
+      p_phone: form.phone.trim(),
+      p_student_name: form.student_name.trim(),
+      p_count: count,
+    })
     setBusy(false)
-    if (insErr) {
-      console.error('TicketsPage: reservation insert failed —', insErr)
+    if (rpcErr || !result) {
+      console.error('TicketsPage: reserve_tickets failed —', rpcErr)
       setErr('Something went wrong saving your reservation. Please try again, or email Corrie directly at shineGHFC@gmail.com so she can add it by hand.')
       return
     }
-    setOutcome({ confirmedCount, waitlistCount, showName: chosenShow?.name || 'the show', requested: count })
+    if (!result.ok) {
+      if (result.code === 'not_eligible') {
+        setErr(`We couldn't find a dancer named "${form.student_name}" in a recital-participating class. Reservations are currently open to performing families only — double-check the spelling, or check back once reservations open to everyone.`)
+      } else if (result.code === 'cap') {
+        const have = Number(result.have) || 0, max = Number(result.max) || maxPerFamily
+        setErr(`You've already reserved ${have} ticket${have === 1 ? '' : 's'}${result.scope === 'per_show' ? ' for this show' : ' total'} — ${max} is the max per family. You can request up to ${Math.max(0, max - have)} more.`)
+      } else if (result.code === 'closed') {
+        setErr("Reservations aren't open right now. Please check back soon.")
+      } else if (result.code === 'no_show') {
+        setErr('That show is no longer available. Please refresh the page and choose again.')
+      } else {
+        setErr('Please check your name, email, phone and ticket count, then try again.')
+      }
+      return
+    }
+    const confirmedCount = Number(result.confirmed) || 0
+    const waitlistCount = Number(result.waitlisted) || 0
+
+    // Confirmation email. Deliberately not awaited and never shown as an
+    // error: the reservation is already saved, and whether an email goes
+    // out (and to whom, saying what) is decided by the database, not here.
+    if (Array.isArray(result.ids) && result.ids.length) {
+      fetch('/.netlify/functions/send-ticket-confirmation', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: result.ids }),
+      }).then(async (r) => { if (!r.ok) console.error('TicketsPage: confirmation email was not sent —', r.status, await r.text().catch(() => '')) })
+        .catch((e) => console.error('TicketsPage: could not reach the confirmation email function —', e))
+    }
+
+    setOutcome({ confirmedCount, waitlistCount, showName: result.show_name || chosenShow?.name || 'the show', requested: count })
     setDone(true)
   }
 
@@ -1454,7 +1417,7 @@ function TicketsPage() {
                 ) : outcome.confirmedCount === 0 ? (
                   <p>{outcome.showName} is currently full, so all {outcome.requested} ticket{outcome.requested === 1 ? '' : 's'} you requested are on the waitlist. If seats open up, Corrie will reach out.</p>
                 ) : (
-                  <p>{outcome.showName} had room for {outcome.confirmedCount} of the {outcome.requested} tickets you requested — those {outcome.confirmedCount} {outcome.confirmedCount === 1 ? 'is' : 'are'} confirmed. The remaining {outcome.waitlistCount} {outcome.waitlistCount === 1 ? 'is' : 'are'} on the waitlist, and Corrie will reach out if more seats open up.</p>
+                  <p>{outcome.showName} had room for {outcome.confirmedCount} of the {outcome.requested} tickets you requested, so {outcome.confirmedCount === 1 ? '1 ticket is' : `${outcome.confirmedCount} tickets are`} confirmed. The remaining {outcome.waitlistCount} {outcome.waitlistCount === 1 ? 'is' : 'are'} on the waitlist, and Corrie will reach out if more seats open up.</p>
                 )}
                 <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 14 }}>Questions? Email Corrie at shineGHFC@gmail.com.</p>
               </div>
