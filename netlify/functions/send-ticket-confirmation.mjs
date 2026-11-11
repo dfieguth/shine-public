@@ -1,0 +1,149 @@
+// Shine — recital ticket confirmation email.
+//
+// Called by the public tickets page right after a family reserves. It
+// sends that family one email saying what they got.
+//
+// HOW THIS STAYS SAFE WITHOUT A LOGIN:
+// This endpoint is public (anonymous families call it), so it must not
+// trust anything the browser tells it. The browser sends only the ids of
+// the reservation it just made. Everything else, including WHO gets the
+// email and WHAT it says, comes from the database through
+// claim_ticket_confirmation():
+//   - it only answers for a reservation made in the last 15 minutes,
+//   - it only answers ONCE per reservation, so replaying a request does
+//     nothing,
+//   - it only answers while "Allow recital emails to be sent" is switched
+//     on in the admin.
+// So this cannot be used to send arbitrary text to arbitrary addresses.
+// The one thing a visitor controls is the parent name they typed, which
+// the database caps at 80 characters and this file escapes.
+//
+// No service-role key is used or needed here. This site must never have
+// one.
+//
+// Environment variables on the shine-public Netlify site (all already set
+// for registration emails, nothing new to add):
+//   GMAIL_ADDRESS, GMAIL_APP_PASSWORD
+//   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+//   ALLOWED_ORIGIN   optional, same meaning as in notify-registration.mjs
+
+import nodemailer from 'nodemailer'
+
+const DEFAULT_SUBJECT = 'Your Shine recital tickets: {show_name}'
+const DEFAULT_BODY = "Hi {parent_name},\n\nYou are confirmed for {ticket_count} ticket(s) to {show_name} on {show_date} at {show_time}.\n\nWe can't wait to see you there!\n\nShine Dance Studio"
+const DEFAULT_WAITLIST_SUBJECT = 'You are on the waitlist: {show_name}'
+const DEFAULT_WAITLIST_BODY = "Hi {parent_name},\n\n{show_name} on {show_date} at {show_time} is currently full, so the {waitlist_count} ticket(s) you asked for are on the waitlist. You do not have confirmed seats yet. We will reach out if seats open up.\n\nShine Dance Studio"
+const DEFAULT_WAITLIST_NOTE = 'Please note: {waitlist_count} more ticket(s) you asked for are on the waitlist because the show filled up. We will reach out if seats open.'
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export const handler = async (event) => {
+  if (event.httpMethod !== 'POST') return json(405, { ok: false, error: 'Method not allowed' })
+
+  const gmailAddress = process.env.GMAIL_ADDRESS
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
+  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
+  const allowedOrigin = process.env.ALLOWED_ORIGIN
+
+  if (!gmailAddress || !gmailAppPassword || !supabaseUrl || !supabaseAnonKey) {
+    console.error('send-ticket-confirmation: missing GMAIL_ADDRESS, GMAIL_APP_PASSWORD, VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY')
+    return json(500, { ok: false, error: 'Email not configured' })
+  }
+  if (allowedOrigin) {
+    const origin = event.headers.origin || event.headers.referer || event.headers.Referer || ''
+    if (origin && !origin.startsWith(allowedOrigin)) {
+      console.error(`send-ticket-confirmation: rejected request from unexpected origin "${origin}"`)
+      return json(403, { ok: false, error: 'Forbidden' })
+    }
+  }
+
+  let ids
+  try { ids = JSON.parse(event.body || '{}').ids } catch { return json(400, { ok: false, error: 'Bad request body' }) }
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 2 || !ids.every((x) => typeof x === 'string' && UUID.test(x))) {
+    return json(400, { ok: false, error: 'Bad reservation ids' })
+  }
+
+  // Ask the database what (if anything) to send. This also marks the
+  // reservation as emailed, so a second call gets "nothing to send".
+  let claim
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/claim_ticket_confirmation`, {
+      method: 'POST',
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_ids: ids }),
+    })
+    if (!res.ok) {
+      console.error('send-ticket-confirmation: claim failed —', res.status, await res.text().catch(() => ''))
+      return json(500, { ok: false, error: 'Could not look up the reservation' })
+    }
+    claim = await res.json()
+  } catch (e) {
+    console.error('send-ticket-confirmation: could not reach the database —', e)
+    return json(500, { ok: false, error: 'Could not look up the reservation' })
+  }
+
+  // Emails switched off, an old reservation, or one already emailed. Not
+  // an error: the reservation itself is saved either way.
+  if (!claim?.send) return json(200, { ok: true, sent: false, reason: claim?.reason || 'nothing_to_send' })
+
+  const confirmed = Number(claim.confirmed) || 0
+  const waitlisted = Number(claim.waitlisted) || 0
+  const showDate = claim.show_date
+    ? new Date(claim.show_date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
+    : 'the scheduled date'
+  const fill = (text) => String(text || '')
+    .replaceAll('{parent_name}', claim.parent_name || 'there')
+    .replaceAll('{ticket_count}', String(confirmed))
+    .replaceAll('{waitlist_count}', String(waitlisted))
+    .replaceAll('{show_name}', claim.show_name || 'the recital')
+    .replaceAll('{show_date}', showDate)
+    .replaceAll('{show_time}', claim.show_time || 'the scheduled time')
+
+  // All wording comes from the admin (Recital Tickets > Settings &
+  // Release), with built-in text as the fallback when a box is blank.
+  let subject, message
+  if (confirmed > 0) {
+    subject = fill(claim.subject || DEFAULT_SUBJECT)
+    message = fill(claim.body || DEFAULT_BODY)
+    // Part of the request was waitlisted: add the waitlist line.
+    if (waitlisted > 0) message += '\n\n' + fill(claim.waitlist_note || DEFAULT_WAITLIST_NOTE)
+  } else {
+    // Nothing confirmed, so the confirmation wording would be wrong. The
+    // separate waitlist email goes out instead.
+    subject = fill(claim.waitlist_subject || DEFAULT_WAITLIST_SUBJECT)
+    message = fill(claim.waitlist_body || DEFAULT_WAITLIST_BODY)
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com', port: 465, secure: true,
+      auth: { user: gmailAddress, pass: gmailAppPassword },
+      connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 8000,
+    })
+    await transporter.sendMail({
+      from: `"Shine Dance Studio" <${gmailAddress}>`,
+      to: claim.email,
+      replyTo: gmailAddress,
+      subject: subject.replace(/[\r\n]+/g, ' ').slice(0, 200),
+      text: message,
+      html: `<div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#222">
+        ${escapeHtml(message).replace(/\n/g, '<br>')}
+        <hr style="border:none;border-top:1px solid #ddd;margin:22px 0">
+        <p style="font-size:13px;color:#666;margin:0">Shine Dance Studio &middot; a ministry of Granada Heights Friends Church</p>
+      </div>`,
+    })
+    return json(200, { ok: true, sent: true })
+  } catch (e) {
+    // The reservation is already marked as emailed, so this one will not
+    // be retried. It is logged here so a pattern is visible in Netlify.
+    console.error('send-ticket-confirmation: send failed —', e)
+    return json(500, { ok: false, error: String(e && e.message ? e.message : e) })
+  }
+}
+
+function json(statusCode, payload) {
+  return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
+}
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
