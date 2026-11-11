@@ -1191,7 +1191,39 @@ function Register() {
     </section>
   )
 }
+// What the Recital Tickets page should be doing right now, from the admin
+// settings: 'hidden', 'coming_soon' or 'open'. Coming soon turns into open
+// by itself once the optional go-live time has passed. Older settings rows
+// (before the page status existed) fall back to the plain on/off switch,
+// and to 'open' if neither is there, which is how the site first behaved.
+function ticketsPageMode(settings) {
+  if (!settings) return 'open'
+  const mode = settings.page_mode || (settings.page_enabled === false ? 'hidden' : 'open')
+  if (mode === 'coming_soon' && settings.opens_at && new Date(settings.opens_at) <= new Date()) return 'open'
+  return mode
+}
+
+// Whether the Recital Tickets page is switched on in the admin. Null while
+// loading (link hidden, so it never flashes on then off). If the setting
+// can't be read at all, the link shows, which is how the site behaved
+// before this switch existed.
+function useTicketsPageEnabled() {
+  const [on, setOn] = useState(null)
+  useEffect(() => {
+    if (!supabase) { setOn(false); return }
+    let live = true
+    supabase.from('recital_settings').select('*').eq('id', 1).maybeSingle().then(({ data, error }) => {
+      if (!live) return
+      if (error) { console.error('Footer: could not read recital settings —', error); setOn(true); return }
+      setOn(ticketsPageMode(data) !== 'hidden')
+    })
+    return () => { live = false }
+  }, [])
+  return on
+}
+
 function Footer() {
+  const ticketsOn = useTicketsPageEnabled()
   return (
     <footer>
       <div className="foot-in">
@@ -1214,7 +1246,7 @@ function Footer() {
           <a href="/#register">Register a dancer</a>
           <a href="/#classes">View classes</a>
           <a href="/policies">Policies &amp; Forms</a>
-          <a href="/tickets">Recital Tickets</a>
+          {ticketsOn && <a href="/tickets">Recital Tickets</a>}
           <a href={REGISTRATION_DONATION_URL} target="_blank" rel="noreferrer">Donate to Shine</a>
           {/* "Give through GHFC (general)" link removed per Corrie/Julieanne
               feedback — the church's general giving page currently has no
@@ -1281,6 +1313,18 @@ function TicketsPage() {
   // Same rule the submit check uses below — released manually OR the
   // automatic deadline has passed. Computed here too so the banner never
   // says "performers-only" while reservations are actually open.
+  // The per-family limit and what it applies to are set in the admin
+  // (Recital Tickets > Settings & Release). Falls back to the original
+  // rules (6, tied to the capacity mode) if those settings aren't there.
+  const maxPerFamily = Math.min(50, Math.max(1, Number(settings?.max_per_family) || 6))
+  const capScope = settings?.family_cap_scope || ((settings?.capacity_mode || 'per_show') === 'per_show' ? 'per_show' : 'total')
+  const pageMode = ticketsPageMode(settings)
+  const pageOff = pageMode !== 'open'
+  // Keep the chosen count valid if the limit is lower than the default pick.
+  useEffect(() => {
+    setForm((f) => (Number(f.ticket_count) > maxPerFamily ? { ...f, ticket_count: String(maxPerFamily) } : f))
+  }, [maxPerFamily])
+
   const isOpenToEveryone = !!settings?.released || (!!settings?.reservation_deadline && new Date(settings.reservation_deadline) <= new Date())
 
   async function submit() {
@@ -1291,7 +1335,8 @@ function TicketsPage() {
     if (!form.student_name.trim()) { setErr('Please add your dancer\'s name.'); return }
     if (!form.show_id) { setErr('Please select a show.'); return }
     const count = Number(form.ticket_count)
-    if (!count || count < 1 || count > 6) { setErr('Please choose between 1 and 6 tickets.'); return }
+    if (!count || count < 1 || count > maxPerFamily) { setErr(maxPerFamily === 1 ? 'Each family can reserve 1 ticket.' : `Please choose between 1 and ${maxPerFamily} tickets.`); return }
+    if (pageOff) { setErr("Reservations aren't open yet. Please check back soon."); return }
     if (!supabase) { setErr('Reservations aren\'t connected yet. Please email Corrie at shineGHFC@gmail.com and she\'ll get you set up.'); return }
     setBusy(true)
 
@@ -1320,10 +1365,10 @@ function TicketsPage() {
       }
     }
 
-    // 6-per-family cap, enforced cumulatively across separate visits to
+    // Per-family cap (set in the admin), enforced cumulatively across separate visits to
     // this form — checked by email, not by any login or matched record.
     const capacityMode = settings?.capacity_mode || 'per_show'
-    const capCheckShowId = capacityMode === 'per_show' ? form.show_id : null
+    const capCheckShowId = capScope === 'per_show' ? form.show_id : null
     const { data: alreadyHave, error: capErr } = await supabase.rpc('ticket_count_for_email', { check_email: form.email.trim(), check_show_id: capCheckShowId })
     if (capErr) {
       console.error('TicketsPage: family cap check failed —', capErr)
@@ -1331,8 +1376,8 @@ function TicketsPage() {
       setBusy(false); return
     }
     const have = Number(alreadyHave) || 0
-    if (have + count > 6) {
-      setErr(`You've already reserved ${have} ticket${have === 1 ? '' : 's'}${capacityMode === 'per_show' ? ' for this show' : ' total'} — 6 is the max per family. You can request up to ${Math.max(0, 6 - have)} more.`)
+    if (have + count > maxPerFamily) {
+      setErr(`You've already reserved ${have} ticket${have === 1 ? '' : 's'}${capScope === 'per_show' ? ' for this show' : ' total'} — ${maxPerFamily} is the max per family. You can request up to ${Math.max(0, maxPerFamily - have)} more.`)
       setBusy(false); return
     }
 
@@ -1392,7 +1437,7 @@ function TicketsPage() {
         <div className="policies-in">
           <a href="/" className="policies-back">← Back to Shine</a>
           <span className="eyebrow">Recital</span>
-          <h1>Reserve your recital tickets</h1>
+          <h1>{pageMode === 'open' ? 'Reserve your recital tickets' : 'Recital tickets'}</h1>
           {done ? (
             <div className="form-card">
               <div className="form-ok">
@@ -1418,6 +1463,32 @@ function TicketsPage() {
             <p className="policies-loading">Loading…</p>
           ) : loadErr ? (
             <p style={{ color: '#b23838' }}>We couldn't load the shows right now. Please email Corrie at <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a> to reserve tickets directly.</p>
+          ) : pageMode === 'coming_soon' ? (
+            <div className="form-card">
+              {settings?.coming_soon_photo_url && <img src={settings.coming_soon_photo_url} alt="A past Shine recital" style={{ width: '100%', maxHeight: 420, objectFit: 'cover', borderRadius: 12, marginBottom: 18, display: 'block' }} />}
+              <h3>Coming soon</h3>
+              {settings?.coming_soon_message
+                ? <PolicyBody text={settings.coming_soon_message} />
+                : <p>Recital ticket reservations will open here soon.</p>}
+              {settings?.opens_at && (
+                <div style={{ background: '#fdf1dd', color: '#a3741f', fontSize: 15, padding: '12px 14px', borderRadius: 10, margin: '14px 0' }}>
+                  ✦ Tickets go live on <strong>{new Date(settings.opens_at).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</strong> at <strong>{new Date(settings.opens_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</strong>.
+                </div>
+              )}
+              {settings?.coming_soon_show_dates !== false && shows.length > 0 && (
+                <>
+                  <h3 style={{ marginTop: 18 }}>Show{shows.length === 1 ? '' : 's'}</h3>
+                  <ul className="policy-list">
+                    {shows.map((s) => (
+                      <li key={s.id}><strong>{s.name}</strong>{s.show_date ? ` · ${new Date(s.show_date + 'T00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}` : ''}{s.show_time ? ` · ${s.show_time}` : ''}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 14 }}>Questions? Email Corrie at <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a>.</p>
+            </div>
+          ) : pageOff ? (
+            <p>Recital ticket reservations aren't open yet. Check back soon, or email Corrie at <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a> with any questions.</p>
           ) : shows.length === 0 ? (
             <p>Shows haven't been set up yet — check back soon, or email Corrie at shineGHFC@gmail.com with any questions.</p>
           ) : (
@@ -1427,6 +1498,7 @@ function TicketsPage() {
                   ✦ Reservations are currently open to performing families only. Everyone else can reserve once tickets are released.
                 </div>
               )}
+              {settings?.page_notes && <div style={{ marginBottom: 16 }}><PolicyBody text={settings.page_notes} /></div>}
               <h3>Reservation details</h3>
               {err && <div className="form-err">{err}</div>}
               <div className="fg2">
@@ -1449,9 +1521,9 @@ function TicketsPage() {
                 </select>
               </div>
               <div className="fg">
-                <label>How many tickets? (6 max per family) *</label>
+                <label>How many tickets? ({maxPerFamily} max per family{capScope === 'per_show' ? ', per show' : ''}) *</label>
                 <select value={form.ticket_count} onChange={set('ticket_count')}>
-                  {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+                  {Array.from({ length: maxPerFamily }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
               </div>
               <button className="btn-primary" onClick={submit} disabled={busy}>{busy ? 'Reserving…' : 'Reserve tickets'}</button>
