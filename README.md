@@ -1,38 +1,52 @@
 # Shine Dance Studio — Public Website
 
-The parent-facing site for Shine Dance Studio, a free dance ministry of Granada Heights Friends Church, La Mirada, CA. Marketing, live class schedule, and registration.
+The parent-facing site for Shine Dance Studio, a free dance ministry of Granada Heights Friends Church, La Mirada, CA: the homepage, live class schedule, registration, policies, and recital ticket reservations.
 
-It shares one Supabase database with the shine-admin management tool:
-- The schedule section reads live from the `classes` table (active classes only).
-- The registration form writes to the `registrations` table, which shows up in the admin tool's Registrations inbox for a leader to process.
+It shares one Supabase database with the **shine-admin** staff tool. Everything Corrie edits in the admin shows up here without a code change.
 
-## Works with or without the database
+## What reads from the database
 
-If the Supabase environment variables are missing, the site still renders completely using the built-in fallback schedule (the real Shine schedule as of mid-2026). The form will show a friendly note pointing people to Corrie's email instead of saving. This means you can preview and deploy the site before the backend is wired, then connect it later with zero code changes.
+- **Schedule and registration class list:** the `classes` table (active classes only).
+- **Homepage wording, registration switches and meeting details:** Admin → Site Content.
+- **Team, testimonials, announcements, policies, photos:** their own admin screens.
+- **Recital tickets (`/tickets`):** Admin → Recital Tickets.
+
+There is no built-in fallback content. If the database cannot be reached, each section shows a loading or "could not load" message, and the forms tell people to email Corrie. Nothing made-up is ever shown.
+
+## How the forms save (important)
+
+The public is **not** allowed to write families, students, enrollments, registrations or ticket reservations directly. Two database functions do that work, and each one runs every check itself, one request at a time:
+
+- `register_student()` — class registration (migration 43).
+- `reserve_tickets()` — recital tickets (migrations 39 and 42).
+
+That is what stops a class or a show being overfilled when many families submit at once, and it means the browser is never trusted. The interest and volunteer forms still save directly, with size limits.
+
+The two email functions in `netlify/functions` are public endpoints, so they take only an id from the browser and read who to email, and what to say, from the database.
 
 ## Setup
 
 1. `npm install`
-2. Copy `.env.example` to `.env` and fill in the same Supabase URL and anon key used by the shine-admin project. (Skip this to run in fallback mode.)
+2. Copy `env.example` to `.env` and fill in the same Supabase URL and anon key as shine-admin.
 3. `npm run dev`
+
+The database itself is built from the **shine-admin** repo (`schema.sql`, then the migrations). See that README.
 
 ## Deploying to Netlify
 
-- Push to a GitHub repo, import in Netlify ("Add new site" -> "Import an existing project").
-- Add env vars `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, and `NOTIFY_EMAIL` under Site configuration -> Environment variables.
-- Deploy. Vite only bakes environment variables in at build time, so if you add or change one later, trigger a fresh deploy for it to take effect.
+- Push to GitHub and import the repo in Netlify.
+- Under Site configuration → Environment variables, add:
+  - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+  - `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` (if the app password is ever regenerated, update it on BOTH Netlify sites at the same time)
+  - `NOTIFY_EMAIL` (where new-registration alerts go)
+  - `ALLOWED_ORIGIN` (optional: the site's own address)
+- **Never** add `SUPABASE_SERVICE_ROLE_KEY` to this site. It is a master password for the database and belongs only on shine-admin.
+- Vite bakes the `VITE_` variables in at build time, so trigger a fresh deploy after changing one.
 
-The database's row-level security (from the admin project's `schema.sql`) already allows the public to read active classes and insert registrations, and nothing else. No additional configuration needed.
+## Facts baked into the code
 
-## Swapping content
+These are not editable from the admin. Changing them needs a code edit:
 
-- **Hero photo:** replace `src/assets/shine-hero.jpg` with any wide recital/class photo (keep the same filename, or update the import in `App.jsx`). Use release-cleared photos only.
-- **Instructor bios/photos:** edit the `TEAM` array near the middle of `src/App.jsx`. Add a `photo` field (import an image at the top) to replace the initials circle.
-- **Gallery:** drop images into `src/assets`, import them in `App.jsx`, and add `src` fields to the `GALLERY` array.
-- **Schedule:** once Supabase is connected, edit classes in the admin tool and the site updates itself. The `FALLBACK_SCHEDULE` in `App.jsx` only shows when the database is unreachable.
-
-## Facts baked in (verify before launch)
-
-- Contact: Corrie Villa, shineGHFC@gmail.com
-- Church: 11818 La Mirada Blvd., La Mirada, CA 90638 · 562.943.7255
-- Schedule sourced from ghfc.org/connect/kids
+- Contact: Corrie Villa, shineGHFC@gmail.com (shown on the forms and used as the email signature)
+- Church: 11818 La Mirada Blvd., La Mirada, CA 90638
+- The donation link (`REGISTRATION_DONATION_URL` in `src/App.jsx`)
