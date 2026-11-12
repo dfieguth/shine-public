@@ -1283,7 +1283,58 @@ function PolicyBody({ text }) {
   )
 }
 
-const BLANK_TICKET_FORM = { parent_name: '', email: '', phone: '', student_name: '', show_id: '', ticket_count: '2' }
+const BLANK_TICKET_FORM = { parent_name: '', email: '', phone: '', student_name: '', show_id: '', ticket_count: '2', access_code: '' }
+
+// The printable ticket a family gets after reserving. The show TIME is
+// the biggest thing on it on purpose: ushers are mainly checking that a
+// family is at the right performance. Nothing relies on background
+// colors, because browsers leave those out when printing by default.
+// Every value is escaped, since the names were typed into a public form.
+const escHtml = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+const TICKET_PRINT_CSS = `
+  body{font-family:Georgia,'Times New Roman',serif;margin:24px;color:#1c2250}
+  .ticket{display:flex;border:3px solid #1c2250;border-radius:14px;margin:0 0 22px;max-width:760px}
+  .t-main{flex:1;padding:18px 22px;min-width:0}
+  .t-brand{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
+  .t-show{font-size:19px;font-weight:700;margin:6px 0 2px;overflow-wrap:anywhere}
+  .t-time{font-size:64px;font-weight:700;line-height:1.02;margin:4px 0 2px}
+  .t-date{font-size:19px}
+  .t-fam{font-size:14px;margin-top:10px;color:#333;overflow-wrap:anywhere}
+  .t-stub{width:150px;border-left:3px dashed #1c2250;padding:18px 12px;text-align:center;display:flex;flex-direction:column;justify-content:center}
+  .t-admit{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
+  .t-count{font-size:68px;font-weight:700;line-height:1}
+  .t-seats{font-size:13px}
+  .t-note{font-size:11px;color:#555;margin-top:10px}
+  .hint{font-size:13px;color:#555;max-width:760px}
+  @media print { body{margin:10mm} .hint{display:none} }
+`
+function ticketDateText(showDate) {
+  return showDate ? new Date(showDate + 'T00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : ''
+}
+function printRecitalTicket(tk) {
+  const n = Number(tk.count) || 0
+  const w = window.open('', '_blank')
+  if (!w) { alert('Your browser blocked the print window. Allow pop-ups for this site and try again, or take a screenshot of your ticket instead.'); return }
+  w.document.write(`<!doctype html><html><head><title>Shine recital ticket</title><style>${TICKET_PRINT_CSS}</style></head><body>
+    <div class="ticket">
+      <div class="t-main">
+        <div class="t-brand">Shine Dance Studio · Recital Ticket</div>
+        <div class="t-show">${escHtml(tk.showName || 'Recital')}</div>
+        <div class="t-time">${escHtml(tk.showTime || '')}</div>
+        <div class="t-date">${escHtml(ticketDateText(tk.showDate))}</div>
+        <div class="t-fam">${escHtml(tk.parentName || '')}${tk.studentName ? ` · Dancer: ${escHtml(tk.studentName)}` : ''}</div>
+      </div>
+      <div class="t-stub">
+        <div class="t-admit">Admit</div>
+        <div class="t-count">${n}</div>
+        <div class="t-seats">${n === 1 ? 'guest' : 'guests'}</div>
+        <div class="t-note">Good for this show only</div>
+      </div>
+    </div>
+    <p class="hint">Print this page and bring it with you, or show it on your phone at the door.</p>
+  </body></html>`)
+  w.document.close(); w.focus(); w.print()
+}
 
 function TicketsPage() {
   const [shows, setShows] = useState(null)
@@ -1325,6 +1376,9 @@ function TicketsPage() {
     setForm((f) => (Number(f.ticket_count) > maxPerFamily ? { ...f, ticket_count: String(maxPerFamily) } : f))
   }, [maxPerFamily])
 
+  const selectedShow = (shows || []).find((s) => s.id === form.show_id) || null
+  const anyShowNeedsCode = (shows || []).some((s) => s.requires_code)
+
   const isOpenToEveryone = !!settings?.released || (!!settings?.reservation_deadline && new Date(settings.reservation_deadline) <= new Date())
 
   async function submit() {
@@ -1334,6 +1388,11 @@ function TicketsPage() {
     if (!form.phone.trim()) { setErr('Please add your phone number.'); return }
     if (!form.student_name.trim()) { setErr('Please add your dancer\'s name.'); return }
     if (!form.show_id) { setErr('Please select a show.'); return }
+    // Each show can have its own access code, handed out by Corrie to the
+    // families performing in it. The database does the real check; this
+    // only saves a round trip when the box was left empty.
+    const needsCode = !isOpenToEveryone && !!selectedShow?.requires_code
+    if (needsCode && !form.access_code.trim()) { setErr('Please enter the access code for this show. It was sent to families performing in it.'); return }
     const count = Number(form.ticket_count)
     if (!count || count < 1 || count > maxPerFamily) { setErr(maxPerFamily === 1 ? 'Each family can reserve 1 ticket.' : `Please choose between 1 and ${maxPerFamily} tickets.`); return }
     if (pageOff) { setErr("Reservations aren't open yet. Please check back soon."); return }
@@ -1354,6 +1413,9 @@ function TicketsPage() {
       p_phone: form.phone.trim(),
       p_student_name: form.student_name.trim(),
       p_count: count,
+      // Only sent when a code is actually needed, so this page still works
+      // against a database that has not had migration 42 run yet.
+      ...(needsCode ? { p_code: form.access_code.trim() } : {}),
     })
     setBusy(false)
     if (rpcErr || !result) {
@@ -1367,6 +1429,8 @@ function TicketsPage() {
       } else if (result.code === 'cap') {
         const have = Number(result.have) || 0, max = Number(result.max) || maxPerFamily
         setErr(`You've already reserved ${have} ticket${have === 1 ? '' : 's'}${result.scope === 'per_show' ? ' for this show' : ' total'} — ${max} is the max per family. You can request up to ${Math.max(0, max - have)} more.`)
+      } else if (result.code === 'bad_code') {
+        setErr(`That access code isn't right for ${chosenShow?.name || 'this show'}. Each show has its own code, so check that you picked the show your dancer is in. If it still doesn't work, email Corrie at shineGHFC@gmail.com.`)
       } else if (result.code === 'closed') {
         setErr("Reservations aren't open right now. Please check back soon.")
       } else if (result.code === 'no_show') {
@@ -1389,7 +1453,11 @@ function TicketsPage() {
         .catch((e) => console.error('TicketsPage: could not reach the confirmation email function —', e))
     }
 
-    setOutcome({ confirmedCount, waitlistCount, showName: result.show_name || chosenShow?.name || 'the show', requested: count })
+    setOutcome({
+      confirmedCount, waitlistCount, showName: result.show_name || chosenShow?.name || 'the show', requested: count,
+      showDate: chosenShow?.show_date || '', showTime: chosenShow?.show_time || '',
+      parentName: form.parent_name.trim(), studentName: form.student_name.trim(),
+    })
     setDone(true)
   }
 
@@ -1418,6 +1486,31 @@ function TicketsPage() {
                   <p>{outcome.showName} is currently full, so all {outcome.requested} ticket{outcome.requested === 1 ? '' : 's'} you requested are on the waitlist. If seats open up, Corrie will reach out.</p>
                 ) : (
                   <p>{outcome.showName} had room for {outcome.confirmedCount} of the {outcome.requested} tickets you requested, so {outcome.confirmedCount === 1 ? '1 ticket is' : `${outcome.confirmedCount} tickets are`} confirmed. The remaining {outcome.waitlistCount} {outcome.waitlistCount === 1 ? 'is' : 'are'} on the waitlist, and Corrie will reach out if more seats open up.</p>
+                )}
+                {outcome.confirmedCount > 0 && (
+                  <>
+                    <div style={{ display: 'flex', border: '3px solid var(--navy, #1c2250)', borderRadius: 14, margin: '20px auto 20px', maxWidth: 520, textAlign: 'left', color: '#1c2250', background: '#fff' }}>
+                      <div style={{ flex: 1, padding: '14px 18px', minWidth: 0 }}>
+                        <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', fontWeight: 700 }}>Shine Dance Studio · Recital Ticket</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4, overflowWrap: 'anywhere' }}>{outcome.showName}</div>
+                        <div style={{ fontSize: 44, fontWeight: 700, lineHeight: 1.05 }}>{outcome.showTime}</div>
+                        <div style={{ fontSize: 15 }}>{ticketDateText(outcome.showDate)}</div>
+                        <div style={{ fontSize: 13, marginTop: 8, color: '#333', overflowWrap: 'anywhere' }}>{outcome.parentName}{outcome.studentName ? ` · Dancer: ${outcome.studentName}` : ''}</div>
+                      </div>
+                      <div style={{ width: 104, borderLeft: '3px dashed #1c2250', padding: '14px 8px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                        <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', fontWeight: 700 }}>Admit</div>
+                        <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1 }}>{outcome.confirmedCount}</div>
+                        <div style={{ fontSize: 12 }}>{outcome.confirmedCount === 1 ? 'guest' : 'guests'}</div>
+                      </div>
+                    </div>
+                    <button className="btn-primary" onClick={() => printRecitalTicket({ showName: outcome.showName, showDate: outcome.showDate, showTime: outcome.showTime, parentName: outcome.parentName, studentName: outcome.studentName, count: outcome.confirmedCount })}>Print your ticket</button>
+                    <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 10 }}>Please bring this ticket to the show, printed or on your phone. It is good for this performance only.</p>
+                  </>
+                )}
+                {shows && shows.length > 1 && (
+                  <p style={{ marginTop: 14 }}>
+                    <button type="button" onClick={() => { setDone(false); setOutcome(null); setErr(''); setForm((f) => ({ ...f, show_id: '', access_code: '' })) }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--teal, #2e9db5)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}>Dancer in another show? Reserve for it too</button>
+                  </p>
                 )}
                 <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 14 }}>Questions? Email Corrie at shineGHFC@gmail.com.</p>
               </div>
@@ -1458,7 +1551,9 @@ function TicketsPage() {
             <div className="form-card">
               {!isOpenToEveryone && (
                 <div style={{ background: '#fdf1dd', color: '#a3741f', fontSize: 14, padding: '10px 14px', borderRadius: 10, marginBottom: 16 }}>
-                  ✦ Reservations are currently open to performing families only. Everyone else can reserve once tickets are released.
+                  {anyShowNeedsCode
+                    ? '✦ Reservations are open to performing families. You will need the access code for your dancer\'s show. Each show has its own code.'
+                    : '✦ Reservations are currently open to performing families only. Everyone else can reserve once tickets are released.'}
                 </div>
               )}
               {settings?.page_notes && <div style={{ marginBottom: 16 }}><PolicyBody text={settings.page_notes} /></div>}
@@ -1483,6 +1578,12 @@ function TicketsPage() {
                   ))}
                 </select>
               </div>
+              {!isOpenToEveryone && selectedShow?.requires_code && (
+                <div className="fg">
+                  <label>Access code for {selectedShow.name} *</label>
+                  <input type="text" value={form.access_code} onChange={set('access_code')} autoComplete="off" autoCapitalize="characters" spellCheck={false} />
+                </div>
+              )}
               <div className="fg">
                 <label>How many tickets? ({maxPerFamily} max per family{capScope === 'per_show' ? ', per show' : ''}) *</label>
                 <select value={form.ticket_count} onChange={set('ticket_count')}>
