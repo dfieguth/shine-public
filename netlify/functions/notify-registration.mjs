@@ -32,6 +32,14 @@ import nodemailer from 'nodemailer'
 
 const MAX_LEN = 300 // generous for any real name/class field; blocks junk payloads
 
+// Only plain addresses are ever handed to the mail library. Addresses
+// come from public forms, and the older mail library this site runs has
+// known flaws in how it reads unusual ones (quotes, comments, semicolons,
+// angle brackets), where display text can end up treated as a second
+// recipient. A plain name@domain address cannot trigger any of that.
+const SAFE_EMAIL = /^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/
+const isSafeEmail = (e) => typeof e === 'string' && e.length <= 254 && SAFE_EMAIL.test(e)
+
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { ok: false, error: 'Method not allowed' })
@@ -82,7 +90,9 @@ export const handler = async (event) => {
 
   const parentName = str(r.parent_name) || 'A parent'
   const studentName = str(r.student_name) || 'a student'
-  const parentEmail = str(r.email)
+  const typedEmail = str(r.email)
+  const parentEmail = isSafeEmail(typedEmail) ? typedEmail : ''
+  if (typedEmail && !parentEmail) console.error('notify-registration: the parent email is not a plain name@domain address, so no confirmation is sent to it —', typedEmail.slice(0, 80))
 
   // Split into three groups so the email can say something true and
   // specific about each, instead of one flat list that doesn't distinguish

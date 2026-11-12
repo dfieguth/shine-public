@@ -36,6 +36,14 @@ const DEFAULT_WAITLIST_BODY = "Hi {parent_name},\n\n{show_name} on {show_date} a
 const DEFAULT_WAITLIST_NOTE = 'Please note: {waitlist_count} more ticket(s) you asked for are on the waitlist because the show filled up. We will reach out if seats open.'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// Only plain addresses are ever handed to the mail library. Addresses
+// come from public forms, and the older mail library this site runs has
+// known flaws in how it reads unusual ones (quotes, comments, semicolons,
+// angle brackets), where display text can end up treated as a second
+// recipient. A plain name@domain address cannot trigger any of that.
+const SAFE_EMAIL = /^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/
+const isSafeEmail = (e) => typeof e === 'string' && e.length <= 254 && SAFE_EMAIL.test(e)
+
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') return json(405, { ok: false, error: 'Method not allowed' })
 
@@ -85,6 +93,10 @@ export const handler = async (event) => {
   // Emails switched off, an old reservation, or one already emailed. Not
   // an error: the reservation itself is saved either way.
   if (!claim?.send) return json(200, { ok: true, sent: false, reason: claim?.reason || 'nothing_to_send' })
+  if (!isSafeEmail(claim.email)) {
+    console.error('send-ticket-confirmation: the reservation email is not a plain name@domain address, nothing sent —', String(claim.email || '').slice(0, 80))
+    return json(200, { ok: true, sent: false, reason: 'bad_address' })
+  }
 
   const confirmed = Number(claim.confirmed) || 0
   const waitlisted = Number(claim.waitlisted) || 0
