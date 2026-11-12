@@ -126,6 +126,29 @@ export const handler = async (event) => {
     message = fill(claim.waitlist_body || DEFAULT_WAITLIST_BODY)
   }
 
+  // The ticket itself, in the email, so a family can print the email or
+  // show it on a phone at the door. Built with a plain table and inline
+  // styles because that is what email programs render reliably. Only for
+  // confirmed tickets: a waitlisted family has no seats to show a ticket for.
+  const ticketHtml = confirmed > 0 ? `
+        <table role="presentation" cellpadding="0" cellspacing="0" style="border:3px solid #1c2250;border-radius:12px;margin:22px 0 6px;color:#1c2250;font-family:Georgia,'Times New Roman',serif;border-collapse:separate">
+          <tr>
+            <td style="padding:16px 20px;vertical-align:top">
+              <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;font-weight:bold">Shine Dance Studio &middot; Recital Ticket</div>
+              <div style="font-size:18px;font-weight:bold;margin-top:6px">${escapeHtml(claim.show_name || 'Recital')}</div>
+              <div style="font-size:46px;font-weight:bold;line-height:1.1">${escapeHtml(claim.show_time || '')}</div>
+              <div style="font-size:17px">${escapeHtml(showDate)}</div>
+              <div style="font-size:13px;color:#333;margin-top:8px">${escapeHtml(claim.parent_name || '')}</div>
+            </td>
+            <td style="padding:16px 18px;text-align:center;vertical-align:middle;border-left:3px dashed #1c2250">
+              <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;font-weight:bold">Admit</div>
+              <div style="font-size:50px;font-weight:bold;line-height:1">${confirmed}</div>
+              <div style="font-size:12px">${confirmed === 1 ? 'guest' : 'guests'}</div>
+            </td>
+          </tr>
+        </table>
+        <p style="font-size:13px;color:#555;margin:0 0 4px">This is your ticket. Print this email or show it on your phone at the door. Good for this performance only.</p>` : ''
+
   try {
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com', port: 465, secure: true,
@@ -140,6 +163,7 @@ export const handler = async (event) => {
       text: message,
       html: `<div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#222">
         ${escapeHtml(message).replace(/\n/g, '<br>')}
+        ${ticketHtml}
         <hr style="border:none;border-top:1px solid #ddd;margin:22px 0">
         <p style="font-size:13px;color:#666;margin:0">Shine Dance Studio &middot; a ministry of Granada Heights Friends Church</p>
       </div>`,
