@@ -1,0 +1,7 @@
+# Sent with every page of the public site. Deliberately does NOT block
+# the site from being shown inside another page, in case the church site
+# ever embeds it.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
