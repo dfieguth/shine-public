@@ -31,6 +31,21 @@ function useSiteContent(defaults) {
   return content
 }
 
+// A plain name@domain address. Checked before anything is sent, so a typo
+// is caught while the family is still on the form.
+const EMAIL_OK = /^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/
+
+// A box real visitors never see or fill. Simple form-filling bots fill
+// every box they find, which is how they give themselves away. It is
+// hidden from sight, from the keyboard and from screen readers.
+function BotTrap({ value, onChange }) {
+  return (
+    <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, overflow: 'hidden' }}>
+      <label>Leave this box empty<input type="text" name="website" tabIndex={-1} autoComplete="off" value={value} onChange={onChange} /></label>
+    </div>
+  )
+}
+
 const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const BUCKET = 'site-photos'
 
@@ -81,7 +96,7 @@ function Reveal({ children, className = '', id }) {
 function Nav() {
   const [solid, setSolid] = useState(false)
   const [showInterest, setShowInterest] = useState(false)
-  const [iForm, setIForm] = useState({ name: '', email: '', phone: '', message: '' })
+  const [iForm, setIForm] = useState({ name: '', email: '', phone: '', message: '', website: '' })
   const [iBusy, setIBusy] = useState(false)
   const [iDone, setIDone] = useState(false)
   const [iErr, setIErr] = useState('')
@@ -91,7 +106,7 @@ function Nav() {
   // the same way "Just have questions?" is, rather than sharing state with
   // the Support component.
   const [showVol, setShowVol] = useState(false)
-  const [vForm, setVForm] = useState({ name: '', email: '', phone: '', message: '' })
+  const [vForm, setVForm] = useState({ name: '', email: '', phone: '', message: '', website: '' })
   const [vBusy, setVBusy] = useState(false)
   const [vDone, setVDone] = useState(false)
   const [vErr, setVErr] = useState('')
@@ -100,6 +115,8 @@ function Nav() {
     setVErr('')
     if (!vForm.name.trim()) { setVErr('Please add your name.'); return }
     if (!vForm.email.trim() && !vForm.phone.trim()) { setVErr('Please add an email or phone so we can reach you.'); return }
+    if (vForm.email.trim() && !EMAIL_OK.test(vForm.email.trim())) { setVErr('That email address doesn\'t look right. Please check it.'); return }
+    if (vForm.website) { setVDone(true); return }
     if (!supabase) { setVErr('Not connected yet — please email shineGHFC@gmail.com directly.'); return }
     setVBusy(true)
     const { error } = await supabase.from('volunteer_inquiries').insert({
@@ -121,6 +138,8 @@ function Nav() {
     setIErr('')
     if (!iForm.name.trim()) { setIErr('Please add your name.'); return }
     if (!iForm.email.trim()) { setIErr('Please add an email so we can reach you.'); return }
+    if (!EMAIL_OK.test(iForm.email.trim())) { setIErr('That email address doesn\'t look right. Please check it.'); return }
+    if (iForm.website) { setIDone(true); return }
     if (!supabase) { setIErr('Not connected yet — please email shineGHFC@gmail.com directly.'); return }
     setIBusy(true)
     const { error } = await supabase.from('contact_interest').insert({
@@ -162,10 +181,11 @@ function Nav() {
                 <h3 style={{ marginBottom: 4 }}>Volunteer with Shine</h3>
                 <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 18 }}>Tell us a little about you and Corrie will be in touch.</p>
                 {vErr && <div className="vol-err">{vErr}</div>}
-                <div className="vol-fg"><label>Your name</label><input value={vForm.name} onChange={setV('name')} placeholder="Name" /></div>
-                <div className="vol-fg"><label>Email</label><input type="email" value={vForm.email} onChange={setV('email')} placeholder="you@email.com" /></div>
-                <div className="vol-fg"><label>Phone</label><input type="tel" value={vForm.phone} onChange={setV('phone')} placeholder="(000) 000-0000" /></div>
-                <div className="vol-fg"><label>How would you like to help? (optional)</label><textarea value={vForm.message} onChange={setV('message')} rows={3} placeholder="Greeter, Class Helper, Unlock on Monday, etc." /></div>
+                <BotTrap value={vForm.website} onChange={setV('website')} />
+                <div className="vol-fg"><label htmlFor="fld-1">Your name</label><input id="fld-1" maxLength={160} value={vForm.name} onChange={setV('name')} placeholder="Name" /></div>
+                <div className="vol-fg"><label htmlFor="fld-2">Email</label><input id="fld-2" type="email" value={vForm.email} onChange={setV('email')} placeholder="you@email.com" /></div>
+                <div className="vol-fg"><label htmlFor="fld-3">Phone</label><input id="fld-3" type="tel" value={vForm.phone} onChange={setV('phone')} placeholder="(000) 000-0000" /></div>
+                <div className="vol-fg"><label htmlFor="fld-4">How would you like to help? (optional)</label><textarea id="fld-4" maxLength={4000} value={vForm.message} onChange={setV('message')} rows={3} placeholder="Greeter, Class Helper, Unlock on Monday, etc." /></div>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
                   <button className="btn-outline" onClick={() => setShowVol(false)}>Cancel</button>
                   <button className="btn-primary" onClick={submitVolunteer} disabled={vBusy}>{vBusy ? 'Sending…' : 'Send'}</button>
@@ -190,10 +210,11 @@ function Nav() {
                 <h3 style={{ marginBottom: 4 }}>Not ready to enroll yet?</h3>
                 <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 18 }}>Add your info and we'll keep you posted — no commitment, no registration needed.</p>
                 {iErr && <div className="vol-err">{iErr}</div>}
-                <div className="vol-fg"><label>Your name</label><input value={iForm.name} onChange={setI('name')} placeholder="Name" /></div>
-                <div className="vol-fg"><label>Email</label><input type="email" value={iForm.email} onChange={setI('email')} placeholder="you@email.com" /></div>
-                <div className="vol-fg"><label>Phone (optional)</label><input type="tel" value={iForm.phone} onChange={setI('phone')} placeholder="(000) 000-0000" /></div>
-                <div className="vol-fg"><label>Anything you'd like us to know? (optional)</label><textarea value={iForm.message} onChange={setI('message')} rows={2} /></div>
+                <BotTrap value={iForm.website} onChange={setI('website')} />
+                <div className="vol-fg"><label htmlFor="fld-5">Your name</label><input id="fld-5" maxLength={160} value={iForm.name} onChange={setI('name')} placeholder="Name" /></div>
+                <div className="vol-fg"><label htmlFor="fld-6">Email</label><input id="fld-6" type="email" value={iForm.email} onChange={setI('email')} placeholder="you@email.com" /></div>
+                <div className="vol-fg"><label htmlFor="fld-7">Phone (optional)</label><input id="fld-7" type="tel" value={iForm.phone} onChange={setI('phone')} placeholder="(000) 000-0000" /></div>
+                <div className="vol-fg"><label htmlFor="fld-8">Anything you'd like us to know? (optional)</label><textarea id="fld-8" maxLength={4000} value={iForm.message} onChange={setI('message')} rows={2} /></div>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
                   <button className="btn-outline" onClick={() => setShowInterest(false)}>Cancel</button>
                   <button className="btn-primary" onClick={submitInterest} disabled={iBusy}>{iBusy ? 'Sending…' : 'Keep me posted'}</button>
@@ -444,31 +465,29 @@ function Schedule() {
   )
 }
 
-// Instructor photos/bios: replace initials with real photos when provided.
-const TEAM = [
-  { name: 'Corrie Villa', role: 'Studio Director', initials: 'CV', bio: 'Corrie leads Shine Dance Studio. (Bio coming soon — a couple of warm sentences about her heart for this ministry and these dancers.)' },
-  { name: 'Coming soon', role: 'Ballet', initials: '♪', bio: 'A short, friendly bio for another member of the Shine team.' },
-  { name: 'Coming soon', role: 'Tap', initials: '♪', bio: 'A short, friendly bio for another member of the Shine team.' },
-]
-
 function Instructors() {
   const [team, setTeam] = useState(null)
   useEffect(() => {
-    if (!supabase) return
+    if (!supabase) { setTeam([]); return }
     ;(async () => {
       const { data } = await supabase.from('team_members').select('name, role, bio, photo_path').eq('active', true).order('sort_order')
-      if (data && data.length) {
-        setTeam(data.map((m) => ({
-          name: m.name,
-          role: m.role || '',
-          bio: m.bio || '',
-          photo: m.photo_path ? supabase.storage.from(BUCKET).getPublicUrl(m.photo_path).data.publicUrl : null,
-          initials: (m.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2),
-        })))
-      }
+      // No placeholder people. This used to fall back to a made-up team
+      // ("Bio coming soon", "Coming soon") that every visitor saw for a
+      // moment on every page load, and for good if the real team failed
+      // to load. Nothing is shown until the real team arrives, and the
+      // section is left out if there is no team to show.
+      if (!data || !data.length) { setTeam([]); return }
+      setTeam(data.map((m) => ({
+        name: m.name,
+        role: m.role || '',
+        bio: m.bio || '',
+        photo: m.photo_path ? supabase.storage.from(BUCKET).getPublicUrl(m.photo_path).data.publicUrl : null,
+        initials: (m.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2),
+      })))
     })()
   }, [])
-  const members = team || TEAM
+  if (team && team.length === 0) return null
+  const members = team || []
   return (
     <section className="instructors">
       <Reveal className="section" id="instructors">
@@ -502,7 +521,7 @@ const REGISTRATION_DONATION_URL = 'https://granadaheightsfriendschurch.ccbchurch
 
 function Support() {
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', message: '', website: '' })
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
   const [err, setErr] = useState('')
@@ -511,6 +530,8 @@ function Support() {
     setErr('')
     if (!form.name.trim()) { setErr('Please add your name.'); return }
     if (!form.email.trim() && !form.phone.trim()) { setErr('Please add an email or phone so we can reach you.'); return }
+    if (form.email.trim() && !EMAIL_OK.test(form.email.trim())) { setErr('That email address doesn\'t look right. Please check it.'); return }
+    if (form.website) { setDone(true); return }
     if (!supabase) { setErr('Not connected yet — please email shineGHFC@gmail.com directly.'); return }
     setBusy(true)
     const { error } = await supabase.from('volunteer_inquiries').insert({
@@ -549,10 +570,11 @@ function Support() {
                 <h3 style={{ marginBottom: 4 }}>Volunteer with Shine</h3>
                 <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 18 }}>Tell us a little about you and Corrie will be in touch.</p>
                 {err && <div className="vol-err">{err}</div>}
-                <div className="vol-fg"><label>Your name</label><input value={form.name} onChange={set('name')} placeholder="Name" /></div>
-                <div className="vol-fg"><label>Email</label><input type="email" value={form.email} onChange={set('email')} placeholder="you@email.com" /></div>
-                <div className="vol-fg"><label>Phone</label><input type="tel" value={form.phone} onChange={set('phone')} placeholder="(000) 000-0000" /></div>
-                <div className="vol-fg"><label>How would you like to help? (optional)</label><textarea value={form.message} onChange={set('message')} rows={3} placeholder="Greeter, Class Helper, Unlock on Monday, etc." /></div>
+                <BotTrap value={form.website} onChange={set('website')} />
+                <div className="vol-fg"><label htmlFor="fld-9">Your name</label><input id="fld-9" maxLength={160} value={form.name} onChange={set('name')} placeholder="Name" /></div>
+                <div className="vol-fg"><label htmlFor="fld-10">Email</label><input id="fld-10" type="email" value={form.email} onChange={set('email')} placeholder="you@email.com" /></div>
+                <div className="vol-fg"><label htmlFor="fld-11">Phone</label><input id="fld-11" type="tel" value={form.phone} onChange={set('phone')} placeholder="(000) 000-0000" /></div>
+                <div className="vol-fg"><label htmlFor="fld-12">How would you like to help? (optional)</label><textarea id="fld-12" maxLength={4000} value={form.message} onChange={set('message')} rows={3} placeholder="Greeter, Class Helper, Unlock on Monday, etc." /></div>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
                   <button className="btn-outline" onClick={() => setShowForm(false)}>Cancel</button>
                   <button className="btn-primary" onClick={submit} disabled={busy}>{busy ? 'Sending…' : 'Send'}</button>
@@ -660,7 +682,15 @@ function Register() {
     meeting_sep3_label: 'Wednesday, September 2nd, 7:00–8:00pm (Joy Hall)',
     not_sure_label: 'I\u2019m not sure — please contact me to help pick the right class.',
     class_select_label: 'Please select your class(es) for enrollment.',
+    // Switches on Admin > Site Content. Anything but an explicit "no"
+    // means yes, which is how the site has always behaved.
+    registration_open: 'yes',
+    meetings_required: 'yes',
+    registration_closed_message: 'Registration is closed right now. Use "Just have questions?" at the top of the page to leave your details, and we will be in touch when it opens again.',
   })
+  const regOpen = String(sc.registration_open).trim().toLowerCase() !== 'no'
+  const meetingsRequired = String(sc.meetings_required).trim().toLowerCase() !== 'no'
+  const [website, setWebsite] = useState('') // bot trap, see BotTrap
   const [form, setForm] = useState(BLANK_FORM)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
@@ -734,6 +764,10 @@ function Register() {
     if (!form.parent_first_name.trim()) { setErr('Please add your first name.'); focusField('parent_first_name'); return }
     if (!form.parent_last_name.trim()) { setErr('Please add your last name.'); focusField('parent_last_name'); return }
     if (!form.email.trim()) { setErr('Please add your email address.'); focusField('email'); return }
+    if (!EMAIL_OK.test(form.email.trim())) { setErr('That email address doesn\'t look right. Please check it, since your confirmation is sent there.'); focusField('email'); return }
+    for (const k of ['secondary_parent_email', 'tertiary_parent_email']) {
+      if (form[k].trim() && !EMAIL_OK.test(form[k].trim())) { setErr('One of the additional email addresses doesn\'t look right. Please check it, or leave it blank.'); return }
+    }
     if (!form.phone.trim()) { setErr('Please add your phone number.'); focusField('phone'); return }
     if (!form.student_first_name.trim()) { setErr('Please add your dancer\'s first name.'); focusField('student_first_name'); return }
     if (!form.student_last_name.trim()) { setErr('Please add your dancer\'s last name.'); focusField('student_last_name'); return }
@@ -746,228 +780,88 @@ function Register() {
     if (!form.interested_classes.length && !form.not_sure) { setErr('Please select at least one class, or check "I\'m not sure — please contact me."'); focusField('interested_classes'); return }
     if (!form.heard_about) { setErr('Please let us know how you heard about us.'); focusField('heard_about'); return }
     if (form.heard_about === 'Other' && !form.heard_about_other.trim()) { setErr('Please tell us a bit more in the "how did you hear about us" box.'); focusField('heard_about'); return }
-    if (!form.meeting_aug28 && !form.meeting_sep3) { setErr('Please select at least one Mandatory Parent Meeting date you plan to attend.'); focusField('meeting'); return }
-    if (!form.meeting_acknowledged) { setErr('Please confirm you understand enrollment isn\'t complete until a parent meeting is attended.'); focusField('meeting_acknowledged'); return }
+    if (meetingsRequired && !form.meeting_aug28 && !form.meeting_sep3) { setErr('Please select at least one Mandatory Parent Meeting date you plan to attend.'); focusField('meeting'); return }
+    if (meetingsRequired && !form.meeting_acknowledged) { setErr('Please confirm you understand enrollment isn\'t complete until a parent meeting is attended.'); focusField('meeting_acknowledged'); return }
     if (!form.donation_model_acknowledged) { setErr('Please check the box confirming you understand Shine is run by volunteers and donations.'); focusField('donation_model_acknowledged'); return }
     if (!form.waiver) { setErr('Please check the permission box to continue.'); focusField('waiver'); return }
     if (!supabase) { setErr('Registration isn\'t connected yet. Please email Corrie at shineGHFC@gmail.com and she\'ll get you set up.'); return }
     setBusy(true)
 
-    // Resolve which of the selected class IDs are real, live classes BEFORE
-    // creating the student — this also produces the human-readable class
-    // names used in the log and confirmation email.
-    const matchedClasses = form.interested_classes
-      .map((id) => (liveClasses || []).find((c) => c.id === id))
-      .filter(Boolean)
-    const classesText = form.not_sure || !matchedClasses.length
-      ? 'Not sure yet — help me choose'
-      : matchedClasses.map((c) => c.name).join(', ')
+    // The database does the whole registration in ONE step
+    // (register_student, migration 43): every check, the live seat count,
+    // and saving the family, student, enrollments and log together. Doing
+    // it there, one family at a time, is what stops several families from
+    // all being enrolled in a class's last spot, and means a failure
+    // halfway saves nothing at all instead of half a registration. Nothing
+    // is decided in the browser any more.
     const heardAbout = form.heard_about === 'Other'
       ? `Other: ${form.heard_about_other.trim()}`
       : form.heard_about
-
-    // 1. Log the raw registration (Corrie's record of what was submitted —
-    //    unchanged from before). Built as a plain object first so the same
-    //    data can be sent straight to the email function below — public
-    //    visitors can INSERT into registrations but can't read rows back,
-    //    so we don't rely on Supabase handing the row back to us.
-    const regRow = {
-      parent_name: `${form.parent_first_name.trim()} ${form.parent_last_name.trim()}`.trim(),
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
-      student_name: `${form.student_first_name.trim()} ${form.student_last_name.trim()}`.trim(),
-      student_grade: form.student_grade.trim() || null,
-      student_age: form.student_age.trim() || null,
-      student_birthday: form.student_birthday || null,
-      secondary_parent_name: form.secondary_parent_name.trim() || null,
-      secondary_parent_email: form.secondary_parent_email.trim() || null,
-      secondary_parent_phone: form.secondary_parent_phone.trim() || null,
-      tertiary_parent_name: form.tertiary_parent_name.trim() || null,
-      tertiary_parent_email: form.tertiary_parent_email.trim() || null,
-      tertiary_parent_phone: form.tertiary_parent_phone.trim() || null,
-      emergency_contact_name: form.emergency_contact_name.trim() || null,
-      emergency_contact_relationship: form.emergency_contact_relationship.trim() || null,
-      emergency_contact_phone: form.emergency_contact_phone.trim() || null,
-      interested_class: classesText,
-      heard_about: heardAbout || null,
-      is_returning: form.is_returning === 'returning',
-      meeting_aug28: form.meeting_aug28,
-      meeting_sep3: form.meeting_sep3,
-      meeting_acknowledged: true,
-      wants_donation: form.wants_donation,
-      waiver_acknowledged: true,
-      processed: true, // no admin approval step anymore — this is just a log
-    }
-    const { error: regErr } = await supabase.from('registrations').insert(regRow)
-    if (regErr) console.error('Registration: registrations log insert failed —', regErr)
-
-    // (The registration emails are sent further down, after enrollment,
-    //  so the parent's confirmation can state real enrolled/waitlist
-    //  outcomes per class instead of just listing what they asked for.)
-
-    // 2. Create the real family + student + enrollment records immediately,
-    //    with real-time capacity checking, so the parent sees right now
-    //    whether they got the spot or are waitlisted. Always a FRESH
-    //    record — no attempt to match/merge into an existing family, even
-    //    for "returning" students (that matching only stays safe with a
-    //    human reviewing it, which conflicts with instant processing).
-    // Generating the id here, instead of letting the database hand one
-    // back, is the fix for the 401 errors from last round: supabase.insert
-    // (...).select() asks PostgREST to read the row back after inserting,
-    // which requires SELECT permission the public was deliberately never
-    // given. Generating the id ourselves means the insert never needs to
-    // ask for anything back at all.
-    const famId = crypto.randomUUID()
-    const { error: famErr } = await supabase.from('families').insert({
-      id: famId,
-      parent_first_name: form.parent_first_name.trim(),
-      parent_last_name: form.parent_last_name.trim(),
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
-      secondary_parent_name: form.secondary_parent_name.trim() || null,
-      secondary_parent_email: form.secondary_parent_email.trim() || null,
-      secondary_parent_phone: form.secondary_parent_phone.trim() || null,
-      tertiary_parent_name: form.tertiary_parent_name.trim() || null,
-      tertiary_parent_email: form.tertiary_parent_email.trim() || null,
-      tertiary_parent_phone: form.tertiary_parent_phone.trim() || null,
-      emergency_contact_name: form.emergency_contact_name.trim() || null,
-      emergency_contact_relationship: form.emergency_contact_relationship.trim() || null,
-      emergency_contact_phone: form.emergency_contact_phone.trim() || null,
-      notes: form.wants_donation ? 'Registration donation intent noted at signup.' : null,
+    const { data: result, error: rpcErr } = await supabase.rpc('register_student', {
+      p: {
+        parent_first_name: form.parent_first_name.trim(),
+        parent_last_name: form.parent_last_name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        student_first_name: form.student_first_name.trim(),
+        student_last_name: form.student_last_name.trim(),
+        student_grade: form.student_grade.trim(),
+        student_age: form.student_age.trim(),
+        student_birthday: form.student_birthday || '',
+        secondary_parent_name: form.secondary_parent_name.trim(),
+        secondary_parent_email: form.secondary_parent_email.trim(),
+        secondary_parent_phone: form.secondary_parent_phone.trim(),
+        tertiary_parent_name: form.tertiary_parent_name.trim(),
+        tertiary_parent_email: form.tertiary_parent_email.trim(),
+        tertiary_parent_phone: form.tertiary_parent_phone.trim(),
+        emergency_contact_name: form.emergency_contact_name.trim(),
+        emergency_contact_relationship: form.emergency_contact_relationship.trim(),
+        emergency_contact_phone: form.emergency_contact_phone.trim(),
+        heard_about: heardAbout || '',
+        is_returning: form.is_returning === 'returning',
+        meeting_aug28: meetingsRequired && !!form.meeting_aug28,
+        meeting_sep3: meetingsRequired && !!form.meeting_sep3,
+        wants_donation: !!form.wants_donation,
+        not_sure: !!form.not_sure,
+        class_ids: form.not_sure ? [] : form.interested_classes,
+        website,
+      },
     })
-    const fam = famErr ? null : { id: famId }
-    if (famErr) console.error('Registration: family insert failed —', famErr)
-
-    // THE FIX: this used to proceed regardless of famErr — if the family
-    // insert failed but the student insert that follows happened to
-    // succeed, the code would create a student with family_id: null and
-    // then show a completely normal "You're in!" screen and send a real
-    // confirmation email. That's a child correctly enrolled in the
-    // database with ZERO linked parent contact info — no name, no email,
-    // no phone, no emergency contact, all of which live only on the
-    // families table. Treating this exactly as fatally as a failed student
-    // insert (see the hard-failure block below) closes that gap.
-    if (!fam) {
-      console.error('Registration: no family record was created — aborting before student/enrollment/confirmation.')
-      setErr('Something went wrong saving your registration, and your dancer was NOT added. Please email Corrie directly at shineGHFC@gmail.com so she can add your dancer by hand. Sorry for the hassle!')
+    if (rpcErr || !result) {
+      console.error('Registration: register_student failed —', rpcErr)
+      setErr('Something went wrong saving your registration, and your dancer was NOT added. Please try again, or email Corrie directly at shineGHFC@gmail.com so she can add your dancer by hand. Sorry for the hassle!')
       setBusy(false)
       return
     }
+    if (!result.ok) {
+      setErr(result.code === 'closed'
+        ? 'Registration is closed right now. Please email Corrie at shineGHFC@gmail.com with any questions.'
+        : 'Please check your name, email and phone number, then try again.')
+      setBusy(false)
+      return
+    }
+    const results = (result.outcomes || []).map((o) => ({ name: o.name, when: o.when, status: o.status }))
 
-    const meetingNote = [form.meeting_aug28 && 'Aug 28 meeting', form.meeting_sep3 && 'Sep 3 meeting'].filter(Boolean).join(' + ')
-    const stuId = crypto.randomUUID()
-    const { error: stuErr } = await supabase.from('students').insert({
-      id: stuId,
-      first_name: form.student_first_name.trim(),
-      last_name: form.student_last_name.trim(),
-      grade: form.student_grade.trim() || null,
-      age: form.student_age.trim() || null,
-      birthday: form.student_birthday || null,
-      family_id: fam.id,
-      // Active if they matched at least one real class (so they show up on
-      // the default Students view right away). Inactive if they picked
-      // "Not sure yet" or nothing matched a live class, so Corrie still
-      // knows to follow up via the Inactive filter or the Registrations log.
-      season_status: matchedClasses.length ? 'active' : 'inactive',
-      notes: [
-        meetingNote ? `Parent meeting selected at registration: ${meetingNote}.` : '',
-        form.is_returning === 'returning' ? 'Registered as a returning student.' : 'Registered as a new student.',
-      ].filter(Boolean).join(' ') || null,
-    })
-    const stu = stuErr ? null : { id: stuId }
-    if (stuErr) console.error('Registration: student insert failed —', stuErr)
-
-    // 3. Enroll in each matched class, right now, with a real capacity
-    //    check against the live count — this is what lets the confirmation
-    //    screen say "you're in" or "you're on the waitlist" immediately.
-    //    Each insert's error is checked — a failed enrollment now shows up
-    //    honestly as an error in the results, instead of silently reporting
-    //    "enrolled" while nothing was actually written to the database.
-    //
-    //    IMPORTANT: the count MUST come from class_enrollment_counts(), the
-    //    security-definer RPC also used to build the "Full" tag on the
-    //    class list above. A direct count against `enrollments` (what this
-    //    used to do) silently returns 0 for anon every time, since the
-    //    public was deliberately never given SELECT on that table — so this
-    //    check was never actually blocking anyone from over-enrolling,
-    //    regardless of capacity. This wasn't introduced recently; it's been
-    //    true since instant registration was first built.
-    const { data: liveCounts } = await supabase.rpc('class_enrollment_counts')
-    const enrolledCountByClass = {}
-    for (const row of liveCounts || []) enrolledCountByClass[row.class_id] = Number(row.enrolled) || 0
-
-    const results = []
-    if (stu) {
-      for (const cls of matchedClasses) {
-        let status = 'enrolled'
-        if (cls.capacity && (enrolledCountByClass[cls.id] || 0) >= cls.capacity) status = 'waitlist'
-        else enrolledCountByClass[cls.id] = (enrolledCountByClass[cls.id] || 0) + 1 // so a second class in the SAME submission also sees this one counted
-        const { error: enrollErr } = await supabase.from('enrollments').insert({ student_id: stu.id, class_id: cls.id, status })
-        if (enrollErr) {
-          console.error('Registration: enrollment insert failed —', cls.name, enrollErr)
-          results.push({ name: cls.name, when: cls.when, status: 'error' })
-        } else {
-          results.push({ name: cls.name, when: cls.when, status })
+    // The two registration emails (alert to Corrie, confirmation to the
+    // parent). The page sends only the registration's id; the email
+    // function reads everything else from the database. Deliberately last
+    // and never shown as an error: the registration is already saved, and
+    // email trouble must never cost a family their spot.
+    if (result.registration_id) {
+      try {
+        const emailRes = await fetch('/.netlify/functions/notify-registration', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ registration_id: result.registration_id }),
+        })
+        if (!emailRes.ok) {
+          let detail = ''
+          try { detail = (await emailRes.json())?.error || '' } catch { /* body wasn't JSON */ }
+          console.error(`Registration: notify-registration reported failure (HTTP ${emailRes.status}) —`, detail || '(no error detail returned)')
         }
+      } catch (e) {
+        console.error('Registration: could not reach notify-registration at all (network/connection failure) —', e)
       }
-    } else {
-      // Hard failure: no student record means there is nothing to enroll and
-      // nothing for Corrie to work with. Do NOT show the success screen or
-      // send a "You're in!" email — that's what made this bug invisible
-      // before. The raw registration IS still logged above, so Corrie can
-      // see the attempt in Admin -> Registrations and add them by hand.
-      console.error('Registration: no student record was created — aborting before confirmation.')
-      setErr('Something went wrong saving your registration, and your dancer was NOT added. Please email Corrie directly at shineGHFC@gmail.com so she can add your dancer by hand. Sorry for the hassle!')
-      setBusy(false)
-      return
-    }
-
-    // 4. Send the two registration emails (internal alert to Corrie, and
-    //    the parent confirmation). This calls a Netlify Function, not a
-    //    Supabase Edge Function and not a database webhook:
-    //      - The database webhook could not be created at all (Supabase
-    //        platform error: schema "supabase_functions" does not exist).
-    //      - Supabase Edge Functions block outbound SMTP ports, so Gmail
-    //        sending could never work from there regardless.
-    //    Netlify does not block those ports, so this is where it works.
-    //
-    //    Deliberately wrapped and deliberately last: if email fails for
-    //    any reason, the family's registration and enrollment have ALREADY
-    //    completed successfully above, and they still see their real
-    //    confirmation screen. Email trouble must never cost someone a spot.
-    //
-    //    THE FIX (this round): this used to only catch a NETWORK failure
-    //    (fetch() throwing) and otherwise assume success. It never actually
-    //    read the response — so when the function correctly detected and
-    //    reported a failed send (a 500 with ok:false), nothing here ever
-    //    noticed. Combined with the function itself not logging anything
-    //    (fixed the same round), a real, correctly-caught email failure was
-    //    completely invisible on both ends. Now: read the response, and if
-    //    it reports failure, log it loudly so it shows up in the browser
-    //    console during a live test. Still deliberately never blocks or
-    //    changes the confirmation screen — a failed email is Corrie's and
-    //    my problem to notice and fix, never the registering family's.
-    try {
-      const emailRes = await fetch('/.netlify/functions/notify-registration', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          record: regRow,
-          outcomes: results,
-          // Whatever the parent actually saw on screen (from Site Content),
-          // not a second hardcoded copy that could drift out of sync — this
-          // is the fix for the wrong-meeting-date bug from last round.
-          meeting_labels: { aug28: sc.meeting_aug28_label, sep3: sc.meeting_sep3_label },
-        }),
-      })
-      if (!emailRes.ok) {
-        let detail = ''
-        try { detail = (await emailRes.json())?.error || '' } catch { /* body wasn't JSON */ }
-        console.error(`Registration: notify-registration reported failure (HTTP ${emailRes.status}) for student "${regRow.student_name}" —`, detail || '(no error detail returned)')
-      }
-    } catch (e) {
-      console.error('Registration: could not reach notify-registration at all (network/connection failure) —', e)
-      /* registration already succeeded — nothing to undo, this is visibility only */
     }
 
     setOutcomes(results)
@@ -992,8 +886,8 @@ function Register() {
         <div className="form-card">
           {done ? (
             <div className="form-ok">
-              <div className="big">🎉</div>
-              <h3>You're in!</h3>
+              <div className="big">{outcomes.length > 0 && outcomes.every((o) => o.status === 'waitlist') ? '⏳' : '🎉'}</div>
+              <h3>{outcomes.length > 0 && outcomes.every((o) => o.status === 'waitlist') ? "You're on the waitlist" : outcomes.length > 0 ? "You're in!" : 'Registration received!'}</h3>
               <p>Thanks, {form.parent_first_name}! Here's where {form.student_first_name} landed:</p>
               {outcomes.length > 0 ? (
                 <div className="outcome-list">
@@ -1009,7 +903,7 @@ function Register() {
               ) : (
                 <p style={{ fontSize: 14.5, color: 'var(--ink-soft)' }}>Corrie will follow up to help pick the right class for {form.student_first_name}.</p>
               )}
-              <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 14 }}>Remember: enrollment isn't complete until a parent attends one of the two meeting dates. A confirmation email is on its way with the details.</p>
+              <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 14 }}>{meetingsRequired ? "Remember: enrollment isn't complete until a parent attends one of the two meeting dates. A confirmation email is on its way with the details." : 'A confirmation email is on its way with the details.'}</p>
               {form.wants_donation && (
                 <div className="donate-cta">
                   <p style={{ fontSize: 14.5, marginBottom: 10 }}>You noted you'd like to make a $100 registration donation — thank you! You can complete that here whenever's convenient:</p>
@@ -1034,8 +928,15 @@ function Register() {
                 Register another student
               </button>
             </div>
+          ) : !regOpen ? (
+            <div>
+              <h3>Registration is closed</h3>
+              <PolicyBody text={sc.registration_closed_message} />
+              <p className="form-note">Questions? Email Corrie Villa at shineGHFC@gmail.com.</p>
+            </div>
           ) : (
             <>
+              <BotTrap value={website} onChange={(e) => setWebsite(e.target.value)} />
               <h3>Register your dancer</h3>
               <p className="sub">Sign up or join the waiting list — we'll take it from there.</p>
               {err && <div className="form-err">{err}</div>}
@@ -1054,61 +955,61 @@ function Register() {
 
               <p className="form-section-label">Parent / Guardian (Primary)</p>
               <div className="fg2">
-                <div id="field-parent_first_name" className={`fg ${highlight === 'parent_first_name' ? 'field-flash' : ''}`}><label>First name *</label><input type="text" placeholder="First name" value={form.parent_first_name} onChange={set('parent_first_name')} required /></div>
-                <div id="field-parent_last_name" className={`fg ${highlight === 'parent_last_name' ? 'field-flash' : ''}`}><label>Last name *</label><input type="text" placeholder="Last name" value={form.parent_last_name} onChange={set('parent_last_name')} required /></div>
+                <div id="field-parent_first_name" className={`fg ${highlight === 'parent_first_name' ? 'field-flash' : ''}`}><label htmlFor="fld-13">First name *</label><input id="fld-13" type="text" placeholder="First name" value={form.parent_first_name} onChange={set('parent_first_name')} required /></div>
+                <div id="field-parent_last_name" className={`fg ${highlight === 'parent_last_name' ? 'field-flash' : ''}`}><label htmlFor="fld-14">Last name *</label><input id="fld-14" type="text" placeholder="Last name" value={form.parent_last_name} onChange={set('parent_last_name')} required /></div>
               </div>
               <div className="fg2">
-                <div id="field-email" className={`fg ${highlight === 'email' ? 'field-flash' : ''}`}><label>Email *</label><input type="email" placeholder="you@email.com" value={form.email} onChange={set('email')} required /></div>
-                <div id="field-phone" className={`fg ${highlight === 'phone' ? 'field-flash' : ''}`}><label>Phone *</label><input type="tel" placeholder="(000) 000-0000" value={form.phone} onChange={set('phone')} required /></div>
+                <div id="field-email" className={`fg ${highlight === 'email' ? 'field-flash' : ''}`}><label htmlFor="fld-15">Email *</label><input id="fld-15" type="email" placeholder="you@email.com" value={form.email} onChange={set('email')} required /></div>
+                <div id="field-phone" className={`fg ${highlight === 'phone' ? 'field-flash' : ''}`}><label htmlFor="fld-16">Phone *</label><input id="fld-16" type="tel" placeholder="(000) 000-0000" value={form.phone} onChange={set('phone')} required /></div>
               </div>
 
               <p className="form-section-label">Parent / Guardian (Secondary — optional)</p>
               <div className="fg">
-                <label>Name</label>
-                <input type="text" placeholder="Optional" value={form.secondary_parent_name} onChange={set('secondary_parent_name')} />
+                <label htmlFor="fld-17">Name</label>
+                <input id="fld-17" type="text" placeholder="Optional" value={form.secondary_parent_name} onChange={set('secondary_parent_name')} />
               </div>
               <div className="fg2">
-                <div className="fg"><label>Email</label><input type="email" placeholder="Optional" value={form.secondary_parent_email} onChange={set('secondary_parent_email')} /></div>
-                <div className="fg"><label>Phone</label><input type="tel" placeholder="Optional" value={form.secondary_parent_phone} onChange={set('secondary_parent_phone')} /></div>
+                <div className="fg"><label htmlFor="fld-18">Email</label><input id="fld-18" type="email" placeholder="Optional" value={form.secondary_parent_email} onChange={set('secondary_parent_email')} /></div>
+                <div className="fg"><label htmlFor="fld-19">Phone</label><input id="fld-19" type="tel" placeholder="Optional" value={form.secondary_parent_phone} onChange={set('secondary_parent_phone')} /></div>
               </div>
 
               <p className="form-section-label">Additional Family Member / Guardian (optional)</p>
               <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: -6, marginBottom: 10 }}>For a grandparent or other caregiver who should also be kept in the loop.</p>
               <div className="fg">
-                <label>Name</label>
-                <input type="text" placeholder="Optional" value={form.tertiary_parent_name} onChange={set('tertiary_parent_name')} />
+                <label htmlFor="fld-20">Name</label>
+                <input id="fld-20" type="text" placeholder="Optional" value={form.tertiary_parent_name} onChange={set('tertiary_parent_name')} />
               </div>
               <div className="fg2">
-                <div className="fg"><label>Email</label><input type="email" placeholder="Optional" value={form.tertiary_parent_email} onChange={set('tertiary_parent_email')} /></div>
-                <div className="fg"><label>Phone</label><input type="tel" placeholder="Optional" value={form.tertiary_parent_phone} onChange={set('tertiary_parent_phone')} /></div>
+                <div className="fg"><label htmlFor="fld-21">Email</label><input id="fld-21" type="email" placeholder="Optional" value={form.tertiary_parent_email} onChange={set('tertiary_parent_email')} /></div>
+                <div className="fg"><label htmlFor="fld-22">Phone</label><input id="fld-22" type="tel" placeholder="Optional" value={form.tertiary_parent_phone} onChange={set('tertiary_parent_phone')} /></div>
               </div>
 
               <p className="form-section-label">Emergency Contact (other than a parent)</p>
               <div className="fg2">
-                <div id="field-emergency_contact_name" className={`fg ${highlight === 'emergency_contact_name' ? 'field-flash' : ''}`}><label>Name *</label><input type="text" value={form.emergency_contact_name} onChange={set('emergency_contact_name')} required /></div>
-                <div id="field-emergency_contact_relationship" className={`fg ${highlight === 'emergency_contact_relationship' ? 'field-flash' : ''}`}><label>Relationship *</label><input type="text" placeholder="e.g. Grandparent, neighbor" value={form.emergency_contact_relationship} onChange={set('emergency_contact_relationship')} required /></div>
+                <div id="field-emergency_contact_name" className={`fg ${highlight === 'emergency_contact_name' ? 'field-flash' : ''}`}><label htmlFor="fld-23">Name *</label><input id="fld-23" type="text" value={form.emergency_contact_name} onChange={set('emergency_contact_name')} required /></div>
+                <div id="field-emergency_contact_relationship" className={`fg ${highlight === 'emergency_contact_relationship' ? 'field-flash' : ''}`}><label htmlFor="fld-24">Relationship *</label><input id="fld-24" type="text" placeholder="e.g. Grandparent, neighbor" value={form.emergency_contact_relationship} onChange={set('emergency_contact_relationship')} required /></div>
               </div>
               <div id="field-emergency_contact_phone" className={`fg ${highlight === 'emergency_contact_phone' ? 'field-flash' : ''}`}>
-                <label>Phone *</label>
-                <input type="tel" value={form.emergency_contact_phone} onChange={set('emergency_contact_phone')} required />
+                <label htmlFor="fld-25">Phone *</label>
+                <input id="fld-25" type="tel" value={form.emergency_contact_phone} onChange={set('emergency_contact_phone')} required />
               </div>
 
               <p className="form-section-label">Dancer</p>
               <div className="fg2">
-                <div id="field-student_first_name" className={`fg ${highlight === 'student_first_name' ? 'field-flash' : ''}`}><label>First name *</label><input type="text" placeholder="First name" value={form.student_first_name} onChange={set('student_first_name')} required /></div>
-                <div id="field-student_last_name" className={`fg ${highlight === 'student_last_name' ? 'field-flash' : ''}`}><label>Last name *</label><input type="text" placeholder="Last name" value={form.student_last_name} onChange={set('student_last_name')} required /></div>
+                <div id="field-student_first_name" className={`fg ${highlight === 'student_first_name' ? 'field-flash' : ''}`}><label htmlFor="fld-26">First name *</label><input id="fld-26" type="text" placeholder="First name" value={form.student_first_name} onChange={set('student_first_name')} required /></div>
+                <div id="field-student_last_name" className={`fg ${highlight === 'student_last_name' ? 'field-flash' : ''}`}><label htmlFor="fld-27">Last name *</label><input id="fld-27" type="text" placeholder="Last name" value={form.student_last_name} onChange={set('student_last_name')} required /></div>
               </div>
               <div className="fg2">
-                <div id="field-student_grade" className={`fg ${highlight === 'student_grade' ? 'field-flash' : ''}`}><label>Grade *</label><input type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} required /></div>
-                <div id="field-student_age" className={`fg ${highlight === 'student_age' ? 'field-flash' : ''}`}><label>Age *</label><input type="text" placeholder="e.g. 8" value={form.student_age} onChange={set('student_age')} required /></div>
+                <div id="field-student_grade" className={`fg ${highlight === 'student_grade' ? 'field-flash' : ''}`}><label htmlFor="fld-28">Grade *</label><input id="fld-28" type="text" placeholder="e.g. 4th" value={form.student_grade} onChange={set('student_grade')} required /></div>
+                <div id="field-student_age" className={`fg ${highlight === 'student_age' ? 'field-flash' : ''}`}><label htmlFor="fld-29">Age *</label><input id="fld-29" type="text" placeholder="e.g. 8" value={form.student_age} onChange={set('student_age')} required /></div>
               </div>
               <div id="field-student_birthday" className={`fg ${highlight === 'student_birthday' ? 'field-flash' : ''}`}>
-                <label>Student birthday *</label>
-                <input type="date" value={form.student_birthday} onChange={set('student_birthday')} required />
+                <label htmlFor="fld-30">Student birthday *</label>
+                <input id="fld-30" type="date" value={form.student_birthday} onChange={set('student_birthday')} required />
               </div>
               <div id="field-heard_about" className={`fg ${highlight === 'heard_about' ? 'field-flash' : ''}`}>
-                <label>How did you hear about us? *</label>
-                <select value={form.heard_about} onChange={set('heard_about')} required>
+                <label htmlFor="fld-31">How did you hear about us? *</label>
+                <select id="fld-31" value={form.heard_about} onChange={set('heard_about')} required>
                   <option value="">Select one…</option>
                   {HEARD_ABOUT_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
@@ -1162,6 +1063,7 @@ function Register() {
                 </label>
               </div>
 
+              {meetingsRequired && (<>
               <p className="form-section-label">Mandatory Parent Meeting</p>
               <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8 }}>I plan to attend the Mandatory Parent Meeting on:</p>
               <div id="field-meeting" className={highlight === 'meeting' ? 'field-flash' : ''}>
@@ -1173,6 +1075,7 @@ function Register() {
                 <label className="check"><input type="checkbox" checked={form.meeting_sep3} onChange={set('meeting_sep3')} /><span>{sc.meeting_sep3_label}</span></label>
               </div>
               <label id="field-meeting_acknowledged" className={`check ${highlight === 'meeting_acknowledged' ? 'field-flash' : ''}`}><input type="checkbox" checked={form.meeting_acknowledged} onChange={set('meeting_acknowledged')} /><span>I understand my student's enrollment with Shine is <strong>NOT complete</strong> until a parent or guardian attends one of the above meeting dates.</span></label>
+              </>)}
 
               <p className="form-section-label">Registration Donation</p>
               <label id="field-donation_model_acknowledged" className={`check ${highlight === 'donation_model_acknowledged' ? 'field-flash' : ''}`}><input type="checkbox" checked={form.donation_model_acknowledged} onChange={set('donation_model_acknowledged')} required /><span>I understand Shine is run completely by volunteers and donations.</span></label>
@@ -1387,6 +1290,7 @@ function TicketsPage() {
     if (!form.email.trim()) { setErr('Please add your email.'); return }
     if (!form.phone.trim()) { setErr('Please add your phone number.'); return }
     if (!form.student_name.trim()) { setErr('Please add your dancer\'s name.'); return }
+    if (!EMAIL_OK.test(form.email.trim())) { setErr('That email address doesn\'t look right. Please check it, since your ticket is sent there.'); return }
     if (!form.show_id) { setErr('Please select a show.'); return }
     // Each show can have its own access code, handed out by Corrie to the
     // families performing in it. The database does the real check; this
@@ -1560,16 +1464,16 @@ function TicketsPage() {
               <h3>Reservation details</h3>
               {err && <div className="form-err">{err}</div>}
               <div className="fg2">
-                <div className="fg"><label>Your name *</label><input type="text" value={form.parent_name} onChange={set('parent_name')} /></div>
-                <div className="fg"><label>Dancer's name *</label><input type="text" value={form.student_name} onChange={set('student_name')} /></div>
+                <div className="fg"><label htmlFor="fld-32">Your name *</label><input id="fld-32" type="text" value={form.parent_name} onChange={set('parent_name')} /></div>
+                <div className="fg"><label htmlFor="fld-33">Dancer's name *</label><input id="fld-33" type="text" value={form.student_name} onChange={set('student_name')} /></div>
               </div>
               <div className="fg2">
-                <div className="fg"><label>Email *</label><input type="email" value={form.email} onChange={set('email')} /></div>
-                <div className="fg"><label>Phone *</label><input type="tel" value={form.phone} onChange={set('phone')} /></div>
+                <div className="fg"><label htmlFor="fld-34">Email *</label><input id="fld-34" type="email" value={form.email} onChange={set('email')} /></div>
+                <div className="fg"><label htmlFor="fld-35">Phone *</label><input id="fld-35" type="tel" value={form.phone} onChange={set('phone')} /></div>
               </div>
               <div className="fg">
-                <label>Which show? *</label>
-                <select value={form.show_id} onChange={set('show_id')}>
+                <label htmlFor="fld-36">Which show? *</label>
+                <select id="fld-36" value={form.show_id} onChange={set('show_id')}>
                   <option value="">Select a show…</option>
                   {shows.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -1580,13 +1484,13 @@ function TicketsPage() {
               </div>
               {!isOpenToEveryone && selectedShow?.requires_code && (
                 <div className="fg">
-                  <label>Access code for {selectedShow.name} *</label>
-                  <input type="text" value={form.access_code} onChange={set('access_code')} autoComplete="off" autoCapitalize="characters" spellCheck={false} />
+                  <label htmlFor="fld-37">Access code for {selectedShow.name} *</label>
+                  <input id="fld-37" type="text" value={form.access_code} onChange={set('access_code')} autoComplete="off" autoCapitalize="characters" spellCheck={false} />
                 </div>
               )}
               <div className="fg">
-                <label>How many tickets? ({maxPerFamily} max per family{capScope === 'per_show' ? ', per show' : ''}) *</label>
-                <select value={form.ticket_count} onChange={set('ticket_count')}>
+                <label htmlFor="fld-38">How many tickets? ({maxPerFamily} max per family{capScope === 'per_show' ? ', per show' : ''}) *</label>
+                <select id="fld-38" value={form.ticket_count} onChange={set('ticket_count')}>
                   {Array.from({ length: maxPerFamily }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
               </div>
