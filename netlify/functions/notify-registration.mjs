@@ -18,18 +18,27 @@
 //                         are rejected. Left unset, this check is skipped
 //                         entirely — nothing changes until this is added.
 //
-// A NOTE ON ABUSE: this endpoint has to stay unauthenticated — it's called
-// by anonymous registrants — so it can't have a real auth check. That does
-// mean anyone who finds the URL could POST directly and make the church's
-// Gmail send email to addresses of their choosing. The checks below (empty-
-// field rejection, optional origin check, field-length truncation, outcomes
-// cap) raise the bar against casual/scripted abuse but won't stop a
-// determined attacker forging headers. A real fix (CAPTCHA on the form,
-// Netlify's rate-limiting product, etc.) is a bigger decision Devin hasn't
-// made yet — flagging it here rather than pretending this closes the gap.
+// HOW THIS STAYS SAFE WITHOUT A LOGIN:
+// This endpoint is public (anonymous registrants call it), so it must not
+// trust what the browser tells it. The page sends only the id of the
+// registration it just made. Who gets emailed and what the email says
+// come from the database through claim_registration_email(), which only
+// answers once per registration, and only within 15 minutes of it being
+// made. So this cannot be used to send Shine-branded email to an
+// arbitrary address with arbitrary text, which the older version could.
+//
+// LEGACY CALLS: a browser tab still showing the previous version of the
+// site sends the whole form instead of an id. Those are still honored for
+// the internal alert to Corrie only, so no registration goes unnoticed,
+// but NEVER for an email to any address the browser supplies.
+//
+// Also needs VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, which are
+// already set on this site. No service-role key is used here, and this
+// site must never have one.
 
 import nodemailer from 'nodemailer'
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_LEN = 300 // generous for any real name/class field; blocks junk payloads
 
 // Only plain addresses are ever handed to the mail library. Addresses
@@ -70,20 +79,46 @@ export const handler = async (event) => {
     return json(400, { ok: false, error: 'Bad request body' })
   }
 
-  const r = body.record || {}
-  const outcomes = Array.isArray(body.outcomes) ? body.outcomes.slice(0, 50) : []
+  // Where the facts come from. `trusted` is true only when they came from
+  // the database; only then may an email go to the parent's address.
+  let r, outcomes, meetingLabels, meetingsRequired = true, trusted = false
+  if (typeof body.registration_id === 'string' && UUID.test(body.registration_id)) {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
+    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('notify-registration: missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY')
+      return json(500, { ok: false, error: 'Email not configured' })
+    }
+    let claim
+    try {
+      const res = await fetch(`${supabaseUrl}/rest/v1/rpc/claim_registration_email`, {
+        method: 'POST',
+        headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_id: body.registration_id }),
+      })
+      if (!res.ok) {
+        console.error('notify-registration: claim failed —', res.status, await res.text().catch(() => ''))
+        return json(500, { ok: false, error: 'Could not look up the registration' })
+      }
+      claim = await res.json()
+    } catch (e) {
+      console.error('notify-registration: could not reach the database —', e)
+      return json(500, { ok: false, error: 'Could not look up the registration' })
+    }
+    // Unknown id, older than 15 minutes, or already emailed. Not an error.
+    if (!claim?.send) return json(200, { ok: true, sent: false })
+    r = claim.record || {}
+    outcomes = Array.isArray(claim.outcomes) ? claim.outcomes.slice(0, 50) : []
+    meetingLabels = claim.meeting_labels || {}
+    meetingsRequired = claim.meetings_required !== false
+    trusted = true
+  } else {
+    r = body.record || {}
+    outcomes = Array.isArray(body.outcomes) ? body.outcomes.slice(0, 50) : []
+    meetingLabels = body.meeting_labels || {}
+  }
 
-  // This endpoint has to stay public — anonymous registrants call it
-  // directly, so there's no login to check the way send-broadcast.mjs
-  // checks one. This is NOT real protection against a determined abuser
-  // (nothing here stops someone from finding this URL and POSTing to it
-  // directly with fabricated data), but it's a cheap floor: reject
-  // obviously-empty submissions before doing any work, rather than happily
-  // sending mail for a payload with no actual registrant in it. If real
-  // abuse becomes a problem, the right fix is Netlify's own dashboard-level
-  // rate limiting on this path, not more logic in this file — check
-  // Netlify's current docs for that, since the exact config has changed
-  // over time and isn't something to guess at here.
+  // Reject obviously empty submissions before doing any work.
   if (!str(r.parent_name) || !str(r.student_name)) {
     return json(400, { ok: false, error: 'Missing required registrant info' })
   }
@@ -91,8 +126,9 @@ export const handler = async (event) => {
   const parentName = str(r.parent_name) || 'A parent'
   const studentName = str(r.student_name) || 'a student'
   const typedEmail = str(r.email)
-  const parentEmail = isSafeEmail(typedEmail) ? typedEmail : ''
-  if (typedEmail && !parentEmail) console.error('notify-registration: the parent email is not a plain name@domain address, so no confirmation is sent to it —', typedEmail.slice(0, 80))
+  // The parent only ever gets an email when the address came from the database.
+  const parentEmail = trusted && isSafeEmail(typedEmail) ? typedEmail : ''
+  if (trusted && typedEmail && !parentEmail) console.error('notify-registration: the parent email is not a plain name@domain address, so no confirmation is sent to it —', typedEmail.slice(0, 80))
 
   // Split into three groups so the email can say something true and
   // specific about each, instead of one flat list that doesn't distinguish
@@ -117,8 +153,8 @@ export const handler = async (event) => {
   // back to these hardcoded defaults only if an older frontend build ever
   // calls this function without them, so this never breaks outright.
   const MEETINGS = {
-    aug28: str(body.meeting_labels?.aug28) || 'Friday, August 28th, 6:00–7:00pm (Lindley Hall)',
-    sep3: str(body.meeting_labels?.sep3) || 'Wednesday, September 2nd, 7:00–8:00pm (Joy Hall)',
+    aug28: str(meetingLabels?.aug28) || 'Friday, August 28th, 6:00–7:00pm (Lindley Hall)',
+    sep3: str(meetingLabels?.sep3) || 'Wednesday, September 2nd, 7:00–8:00pm (Joy Hall)',
   }
 
   const meetings = [r.meeting_aug28 && MEETINGS.aug28, r.meeting_sep3 && MEETINGS.sep3]
@@ -141,7 +177,7 @@ export const handler = async (event) => {
     const adminLines = [
       `Student: ${studentName}`,
       `Parent: ${parentName}`,
-      parentEmail ? `Email: ${parentEmail}` : null,
+      typedEmail ? `Email: ${typedEmail}` : null,
       str(r.phone) ? `Phone: ${str(r.phone)}` : null,
       str(r.student_grade) ? `Grade: ${str(r.student_grade)}` : null,
       str(r.student_age) ? `Age: ${str(r.student_age)}` : null,
@@ -151,14 +187,15 @@ export const handler = async (event) => {
       'Classes:',
       ...classLines.map((l) => `  • ${l}`),
       '',
-      meetings ? `Parent meeting selected: ${meetings}` : 'No parent meeting selected',
+      meetingsRequired ? (meetings ? `Parent meeting selected: ${meetings}` : 'No parent meeting selected') : null,
+      trusted ? null : '(Sent from an older copy of the website still open in someone\'s browser. No confirmation went to the parent.)',
       r.wants_donation ? 'Interested in donating' : null,
     ].filter((l) => l !== null)
 
     await transporter.sendMail({
       from: `"Shine Dance Studio" <${gmailAddress}>`,
       to: notifyTo,
-      replyTo: parentEmail || gmailAddress,
+      replyTo: (isSafeEmail(typedEmail) ? typedEmail : '') || gmailAddress,
       subject: `New Shine registration: ${studentName}`,
       text: adminLines.join('\n'),
       html: wrapHtml(`<h2 style="margin:0 0 14px;font-size:19px">New registration</h2>
@@ -198,13 +235,15 @@ export const handler = async (event) => {
           ...errorOutcomes.map((o) => `  • ${classLabel(o)}`),
           '',
         ] : []),
-        'Step 2 is to attend ONE of our two mandatory parent meetings:',
-        `  • ${MEETINGS.aug28}`,
-        `  • ${MEETINGS.sep3}`,
-        ...(meetings ? ['', `You selected: ${meetings}`] : []),
-        '',
-        'Please note: if a parent does not attend one of the two meetings, we will remove your child from the roster.',
-        '',
+        ...(meetingsRequired ? [
+          'Step 2 is to attend ONE of our two mandatory parent meetings:',
+          `  • ${MEETINGS.aug28}`,
+          `  • ${MEETINGS.sep3}`,
+          ...(meetings ? ['', `You selected: ${meetings}`] : []),
+          '',
+          'Please note: if a parent does not attend one of the two meetings, we will remove your child from the roster.',
+          '',
+        ] : []),
         'If you have any questions/concerns about your above registration, please reply to this email. We are happy to help.',
         '',
         'Grace and Peace,',
@@ -236,13 +275,13 @@ export const handler = async (event) => {
           <ul style="margin:0 0 16px;padding-left:20px">
             ${errorOutcomes.map((o) => `<li style="margin-bottom:6px">${escapeHtml(classLabel(o))}</li>`).join('')}
           </ul>` : ''}
-          <p style="margin:0 0 8px"><strong>Step 2 is to attend ONE of our two mandatory parent meetings:</strong></p>
+          ${meetingsRequired ? `<p style="margin:0 0 8px"><strong>Step 2 is to attend ONE of our two mandatory parent meetings:</strong></p>
           <ul style="margin:0 0 14px;padding-left:20px">
             <li style="margin-bottom:6px">${escapeHtml(MEETINGS.aug28)}</li>
             <li style="margin-bottom:6px">${escapeHtml(MEETINGS.sep3)}</li>
           </ul>
           ${meetings ? `<p style="margin:0 0 14px">You selected: ${escapeHtml(meetings)}</p>` : ''}
-          <p style="margin:0 0 14px">Please note: if a parent does not attend one of the two meetings, we will remove your child from the roster.</p>
+          <p style="margin:0 0 14px">Please note: if a parent does not attend one of the two meetings, we will remove your child from the roster.</p>` : ''}
           <p style="margin:0 0 14px">If you have any questions/concerns about your above registration, please reply to this email. We are happy to help.</p>
           <p style="margin:0">Grace and Peace,<br>Corrie Villa</p>`),
       })
