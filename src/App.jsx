@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from './supabaseClient'
 import heroPhoto from './assets/shine-hero.jpg'
 
@@ -624,30 +625,68 @@ function Testimonials() {
 
 function Gallery() {
   const [photos, setPhotos] = useState([])
+  const [open, setOpen] = useState(null) // index of the photo being viewed large
   useEffect(() => {
     if (!supabase) return
     ;(async () => {
-      const { data } = await supabase.storage.from(BUCKET).list('gallery', { limit: 100 })
-      setPhotos((data || []).filter((f) => f.name !== '.emptyFolderPlaceholder').map((f) =>
-        supabase.storage.from(BUCKET).getPublicUrl('gallery/' + f.name).data.publicUrl
-      ))
+      // The admin tool keeps three copies of each photo under the same file
+      // name: the original (gallery/), a small one for this grid
+      // (gallery-thumb/) and a larger one shown on click (gallery-large/).
+      // A photo that has not been optimized yet falls back to its original.
+      const store = supabase.storage.from(BUCKET)
+      const names = async (folder) => {
+        const { data } = await store.list(folder, { limit: 500 })
+        return (data || []).map((f) => f.name).filter((n) => n !== '.emptyFolderPlaceholder')
+      }
+      const [orig, thumbs, larges] = await Promise.all([names('gallery'), names('gallery-thumb'), names('gallery-large')])
+      const url = (folder, n) => store.getPublicUrl(folder + '/' + n).data.publicUrl
+      const t = new Set(thumbs), l = new Set(larges)
+      setPhotos(orig.map((n) => ({
+        thumb: t.has(n) ? url('gallery-thumb', n) : url('gallery', n),
+        large: l.has(n) ? url('gallery-large', n) : url('gallery', n),
+      })))
     })()
   }, [])
-  const tiles = photos.length ? photos : [null, null, null, null, null]
+  const count = photos.length
+  useEffect(() => {
+    if (open === null) return
+    function onKey(e) {
+      if (e.key === 'Escape') setOpen(null)
+      else if (e.key === 'ArrowRight') setOpen((i) => (i + 1) % count)
+      else if (e.key === 'ArrowLeft') setOpen((i) => (i - 1 + count) % count)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, count])
+  const step = (e, d) => { e.stopPropagation(); setOpen((i) => (i + d + count) % count) }
+  const tiles = count ? photos : [null, null, null, null, null]
   return (
     <Reveal className="section" id="gallery">
       <div className="section-head">
         <span className="eyebrow">In the Studio</span>
         <h2>See the joy</h2>
-        <p>Photos from our classes and recitals.{photos.length === 0 && ' (More coming soon!)'}</p>
+        <p>Photos from our classes and recitals.{count === 0 && ' (More coming soon!)'}</p>
       </div>
       <div className="gallery-grid">
-        {tiles.map((src, i) => (
-          <figure className={src ? 'has-img' : ''} key={i}>
-            {src ? <img src={src} alt="Shine Dance Studio" loading="lazy" /> : <span>Photo coming soon</span>}
+        {tiles.map((ph, i) => (
+          <figure className={ph ? 'has-img' : ''} key={i}>
+            {ph
+              ? <button type="button" className="gallery-open" onClick={() => setOpen(i)} aria-label="View this photo larger">
+                  <img src={ph.thumb} alt="Shine Dance Studio" loading="lazy" decoding="async" />
+                </button>
+              : <span>Photo coming soon</span>}
           </figure>
         ))}
       </div>
+      {open !== null && photos[open] && createPortal(
+        <div className="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer" onClick={() => setOpen(null)}>
+          <button type="button" className="lightbox-btn lightbox-close" aria-label="Close" onClick={() => setOpen(null)}>×</button>
+          {count > 1 && <button type="button" className="lightbox-btn lightbox-prev" aria-label="Previous photo" onClick={(e) => step(e, -1)}>‹</button>}
+          <img key={photos[open].large} src={photos[open].large} alt="Shine Dance Studio" onClick={(e) => e.stopPropagation()} />
+          {count > 1 && <button type="button" className="lightbox-btn lightbox-next" aria-label="Next photo" onClick={(e) => step(e, 1)}>›</button>}
+        </div>,
+        document.body
+      )}
     </Reveal>
   )
 }
