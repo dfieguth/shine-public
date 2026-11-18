@@ -753,70 +753,86 @@ function Lightbox({ photos, index, setIndex }) {
   )
 }
 
-// Home page: a strip of highlights that scrolls sideways (swipe, scroll, or
-// the arrow buttons). It never moves on its own. Shows the photos Corrie
-// ticked "Feature on main page"; until she picks any, the first few.
+// Home page: a slideshow of highlights, one photo at a time. Each photo
+// stays fully visible for 3.5 seconds, then cross-fades into the next, and
+// it loops. Arrows, dots and swiping on a phone move it by hand. It shows
+// the photos Corrie ticked "Main page highlight"; until she picks any, the
+// first few.
+//
+// It pauses while someone points at it or uses the keyboard on it, while a
+// photo is open large, while it is off screen, and while the browser tab is
+// in the background. The Pause button stops it for good, and it starts
+// paused for visitors whose device asks for less motion.
+//
+// Data: it uses the large copy of each photo (about 220 KB) so one photo
+// filling the frame looks sharp. Nothing loads until the slideshow is
+// nearly on screen, and then only the photo showing plus the next one, so
+// photos are only downloaded as they come up.
+const SLIDE_SHOW_MS = 3500 // fully visible
+const SLIDE_FADE_MS = 900 // cross-fade (keep in step with .slide in index.css)
+function prefersLessMotion() {
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return false }
+}
+
 function Highlights() {
   const all = useGalleryPhotos()
   const [open, setOpen] = useState(null)
-  const track = useRef(null)
-  const [edge, setEdge] = useState({ start: true, end: true })
   const shown = all || []
   const featured = shown.filter((ph) => ph.featured)
   const reel = featured.length ? featured : shown.slice(0, HIGHLIGHT_FALLBACK)
-  const reelCount = reel.length
+  const n = reel.length
 
-  const measure = () => {
-    const el = track.current
-    if (!el) return
-    setEdge({ start: el.scrollLeft <= 4, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 4 })
-  }
-
-  // ---- Moves along by itself, one photo every few seconds ----------------
-  // Stops while someone is pointing at it, touching it, or using the
-  // keyboard on it, and for a while after they scroll it themselves. Off
-  // from the start for visitors whose device asks for less motion, and
-  // only moves while it is on screen and the browser tab is in view. The
-  // pause button stops it for good. It only cycles through the highlight
-  // photos already on the page, so it downloads nothing extra.
-  const [playing, setPlaying] = useState(() => {
-    try { return !window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return true }
-  })
-  const hold = useRef({ hover: false, focus: false, until: 0, onScreen: false })
+  const [idx, setIdx] = useState(0)
+  const [prev, setPrev] = useState(null) // the photo fading out
+  const cur = n ? idx % n : 0
+  const [lessMotion] = useState(prefersLessMotion)
+  const [playing, setPlaying] = useState(() => !prefersLessMotion())
+  const [seen, setSeen] = useState(false) // has the slideshow come near the screen yet
+  const frame = useRef(null)
+  const hold = useRef({ hover: false, focus: false, onScreen: false, wasHeld: false })
+  const touchX = useRef(null)
   const openRef = useRef(open)
   openRef.current = open
-  const nudge = () => { hold.current.until = Date.now() + 8000 }
-  useEffect(() => {
-    const el = track.current
-    if (!el || typeof IntersectionObserver === 'undefined') { hold.current.onScreen = true; return }
-    const io = new IntersectionObserver(([e]) => { hold.current.onScreen = e.isIntersecting }, { threshold: 0.4 })
-    io.observe(el)
-    return () => io.disconnect()
-  }, [reelCount])
-  useEffect(() => {
-    if (!playing || reelCount < 2) return
-    const id = setInterval(() => {
-      const el = track.current, h = hold.current
-      if (!el || h.hover || h.focus || !h.onScreen || Date.now() < h.until || openRef.current !== null) return
-      if (typeof document !== 'undefined' && document.hidden) return
-      if (el.scrollWidth <= el.clientWidth + 4) return // everything already fits
-      const items = Array.from(el.children)
-      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 4
-      const next = atEnd ? null : items.find((f) => f.offsetLeft > el.scrollLeft + 8)
-      el.scrollTo({ left: next ? next.offsetLeft - items[0].offsetLeft : 0, behavior: 'smooth' })
-    }, 4500)
-    return () => clearInterval(id)
-  }, [playing, reelCount])
-  useEffect(() => {
-    measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [reelCount])
-  const slide = (d) => {
-    const el = track.current
-    if (el) el.scrollBy({ left: d * Math.max(240, el.clientWidth * 0.8), behavior: 'smooth' })
-    nudge()
+
+  const show = (to) => {
+    if (!n) return
+    const k = ((to % n) + n) % n
+    if (k === cur) return
+    setPrev(cur)
+    setIdx(k)
   }
+
+  // Load nothing until the slideshow is close to the screen, and know when
+  // it is actually visible so it never moves while nobody can see it.
+  useEffect(() => {
+    const el = frame.current
+    if (!el) return
+    if (typeof IntersectionObserver === 'undefined') { setSeen(true); hold.current.onScreen = true; return }
+    const near = new IntersectionObserver(([e]) => { if (e.isIntersecting) setSeen(true) }, { rootMargin: '400px 0px' })
+    const vis = new IntersectionObserver(([e]) => { hold.current.onScreen = e.isIntersecting }, { threshold: 0.5 })
+    near.observe(el); vis.observe(el)
+    return () => { near.disconnect(); vis.disconnect() }
+  }, [n])
+
+  // The clock. Restarts whenever the photo changes, so moving it by hand
+  // always gives the new photo its full 3.5 seconds.
+  useEffect(() => {
+    if (!playing || n < 2 || !seen) return
+    let t
+    const wait = (ms) => {
+      t = setTimeout(() => {
+        const h = hold.current
+        const held = h.hover || h.focus || !h.onScreen || openRef.current !== null || (typeof document !== 'undefined' && document.hidden)
+        if (held) { h.wasHeld = true; wait(500); return }
+        if (h.wasHeld) { h.wasHeld = false; wait(SLIDE_SHOW_MS); return } // full time again after a pause
+        show(cur + 1)
+      }, ms)
+    }
+    wait(SLIDE_SHOW_MS + (lessMotion ? 0 : SLIDE_FADE_MS))
+    return () => clearTimeout(t)
+  }, [playing, n, cur, seen])
+
+  const near = (i) => i === cur || i === prev || i === (cur + 1) % n
 
   return (
     <Reveal className="section" id="gallery">
@@ -827,30 +843,54 @@ function Highlights() {
       </div>
       {all === null ? (
         <div className="reel-loading" aria-hidden="true" />
-      ) : reelCount === 0 ? (
+      ) : n === 0 ? (
         <div className="gallery-grid">
           {[0, 1, 2, 3, 4].map((i) => <figure key={i}><span>Photo coming soon</span></figure>)}
         </div>
       ) : (
         <>
-          <div className="reel-wrap"
-            onMouseEnter={() => { hold.current.hover = true }} onMouseLeave={() => { hold.current.hover = false }}
-            onFocus={() => { hold.current.focus = true }} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) hold.current.focus = false }}
-            onTouchStart={nudge} onWheel={nudge} onPointerDown={nudge}>
-            <button type="button" className="reel-btn reel-prev" aria-label="Earlier photos" onClick={() => slide(-1)} disabled={edge.start}>‹</button>
-            <div className="reel" ref={track} onScroll={measure} tabIndex={0} role="group" aria-label="Photo highlights. Scroll sideways for more.">
+          <div
+            className={`slideshow${lessMotion ? ' no-fade' : ''}`}
+            ref={frame}
+            role="region"
+            aria-roledescription="slideshow"
+            aria-label="Photo highlights"
+            onMouseEnter={() => { hold.current.hover = true }}
+            onMouseLeave={() => { hold.current.hover = false }}
+            onFocus={() => { hold.current.focus = true }}
+            onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) hold.current.focus = false }}
+            onTouchStart={(e) => { touchX.current = e.touches[0].clientX }}
+            onTouchEnd={(e) => {
+              if (touchX.current === null) return
+              const dx = e.changedTouches[0].clientX - touchX.current
+              touchX.current = null
+              if (Math.abs(dx) > 40) show(cur + (dx < 0 ? 1 : -1))
+            }}
+          >
+            {seen && reel.map((ph, i) => near(i) ? (
+              <div key={ph.name} className={`slide${i === cur ? ' on' : ''}`} aria-hidden={i !== cur}>
+                <div className="slide-bg" style={{ backgroundImage: `url("${ph.large}")` }} />
+                <button type="button" className="slide-open" onClick={() => setOpen(i)} tabIndex={i === cur ? 0 : -1} aria-label={`View photo ${i + 1} of ${n} larger`}>
+                  <img src={ph.large} alt="Shine Dance Studio" decoding="async" />
+                </button>
+              </div>
+            ) : null)}
+            {n > 1 && (
+              <>
+                <button type="button" className="slide-btn slide-prev" aria-label="Previous photo" onClick={() => show(cur - 1)}>‹</button>
+                <button type="button" className="slide-btn slide-next" aria-label="Next photo" onClick={() => show(cur + 1)}>›</button>
+              </>
+            )}
+          </div>
+          {n > 1 && (
+            <div className="slide-dots">
               {reel.map((ph, i) => (
-                <figure key={ph.name}>
-                  <button type="button" className="gallery-open" onClick={() => setOpen(i)} aria-label={`View photo ${i + 1} of ${reelCount} larger`}>
-                    <img src={ph.thumb} alt="Shine Dance Studio" loading="lazy" decoding="async" onLoad={measure} />
-                  </button>
-                </figure>
+                <button key={ph.name} type="button" className={i === cur ? 'on' : ''} aria-label={`Show photo ${i + 1} of ${n}`} aria-current={i === cur ? 'true' : undefined} onClick={() => show(i)} />
               ))}
             </div>
-            <button type="button" className="reel-btn reel-next" aria-label="More photos" onClick={() => slide(1)} disabled={edge.end}>›</button>
-          </div>
+          )}
           <div className="reel-more">
-            {reelCount > 1 && (
+            {n > 1 && (
               <button type="button" className="reel-play" onClick={() => setPlaying((p) => !p)} aria-pressed={!playing} aria-label={playing ? 'Pause the slideshow' : 'Play the slideshow'}>
                 {playing ? '❚❚ Pause' : '▶ Play'}
               </button>
