@@ -9,6 +9,7 @@ It shares one Supabase database with the **shine-admin** staff tool. Everything 
 - **Schedule and registration class list:** the `classes` table (active classes only).
 - **Homepage wording, registration switches and meeting details:** Admin → Site Content.
 - **Team, testimonials, announcements, policies, photos:** their own admin screens.
+- **Photos:** the main page shows a sideways-scrolling highlights strip (the photos ticked "Main page" in the admin, or the first 10 if none are ticked). Every photo not hidden is on the Gallery page at `/gallery`. Both load the small copies and open a larger copy on click.
 - **Recital tickets (`/tickets`):** Admin → Recital Tickets.
 
 There is no built-in fallback content. If the database cannot be reached, each section shows a loading or "could not load" message, and the forms tell people to email Corrie. Nothing made-up is ever shown.
