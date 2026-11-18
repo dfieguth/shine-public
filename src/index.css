@@ -138,7 +138,7 @@ button{font-family:inherit;cursor:pointer}
 .gallery-open:focus-visible{outline:3px solid var(--ink);outline-offset:-3px}
 .reel-loading{height:400px}
 .slideshow{position:relative;max-width:980px;margin:0 auto;aspect-ratio:3/2;border-radius:16px;overflow:hidden;background:var(--pine-deep);box-shadow:0 14px 40px rgba(10,12,28,.18)}
-.slide{position:absolute;inset:0;opacity:0;transition:opacity 1.8s ease;pointer-events:none}
+.slide{position:absolute;inset:0;opacity:0;transition:opacity 1.8s ease /* real length is set from the admin */;pointer-events:none}
 .slide.on{opacity:1;pointer-events:auto;z-index:1}
 .slideshow.no-fade .slide{transition:none}
 .slide-bg{position:absolute;inset:-40px;background-size:cover;background-position:center;filter:blur(26px) brightness(.5);transform:scale(1.08)}

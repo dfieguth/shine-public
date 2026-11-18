@@ -754,7 +754,7 @@ function Lightbox({ photos, index, setIndex }) {
 }
 
 // Home page: a slideshow of highlights, one photo at a time. Each photo
-// stays fully visible for 4.5 seconds, then cross-fades into the next, and
+// stays fully visible for a few seconds, then cross-fades into the next, and
 // it loops. Arrows, dots and swiping on a phone move it by hand. It shows
 // the photos Corrie ticked "Main page highlight"; until she picks any, the
 // first few.
@@ -768,8 +768,12 @@ function Lightbox({ photos, index, setIndex }) {
 // filling the frame looks sharp. Nothing loads until the slideshow is
 // nearly on screen, and then only the photo showing plus the next one, so
 // photos are only downloaded as they come up.
-const SLIDE_SHOW_MS = 4500 // fully visible
-const SLIDE_FADE_MS = 1800 // cross-fade (keep in step with .slide in index.css)
+// Corrie sets these in the admin (Photos, "Slideshow timing", migration 47):
+// 3 to 6 seconds per photo, 0.5 to 2 seconds of fade. These are the
+// defaults, used until the setting loads or if it cannot be read.
+const SLIDE_SHOW_DEFAULT = 4.5
+const SLIDE_FADE_DEFAULT = 1.8
+const clampNum = (v, lo, hi, d) => { const x = Number(v); return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d }
 function prefersLessMotion() {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return false }
 }
@@ -781,6 +785,22 @@ function Highlights() {
   const featured = shown.filter((ph) => ph.featured)
   const reel = featured.length ? featured : shown.slice(0, HIGHLIGHT_FALLBACK)
   const n = reel.length
+
+  const [timing, setTiming] = useState({ show: SLIDE_SHOW_DEFAULT * 1000, fade: SLIDE_FADE_DEFAULT * 1000 })
+  useEffect(() => {
+    if (!supabase) return
+    let alive = true
+    supabase.from('gallery_settings').select('show_seconds, fade_seconds').eq('id', 1).maybeSingle().then(({ data }) => {
+      if (!alive || !data) return
+      setTiming({
+        show: clampNum(data.show_seconds, 3, 6, SLIDE_SHOW_DEFAULT) * 1000,
+        fade: clampNum(data.fade_seconds, 0.5, 2, SLIDE_FADE_DEFAULT) * 1000,
+      })
+    }, () => {})
+    return () => { alive = false }
+  }, [])
+  const SLIDE_SHOW_MS = timing.show
+  const SLIDE_FADE_MS = timing.fade
 
   const [idx, setIdx] = useState(0)
   const [prev, setPrev] = useState(null) // the photo fading out
@@ -815,7 +835,7 @@ function Highlights() {
   }, [n])
 
   // The clock. Restarts whenever the photo changes, so moving it by hand
-  // always gives the new photo its full 4.5 seconds.
+  // always gives the new photo its full time.
   useEffect(() => {
     if (!playing || n < 2 || !seen) return
     let t
@@ -830,7 +850,7 @@ function Highlights() {
     }
     wait(SLIDE_SHOW_MS + (lessMotion ? 0 : SLIDE_FADE_MS))
     return () => clearTimeout(t)
-  }, [playing, n, cur, seen])
+  }, [playing, n, cur, seen, SLIDE_SHOW_MS, SLIDE_FADE_MS])
 
   const near = (i) => i === cur || i === prev || i === (cur + 1) % n
 
@@ -868,7 +888,7 @@ function Highlights() {
             }}
           >
             {seen && reel.map((ph, i) => near(i) ? (
-              <div key={ph.name} className={`slide${i === cur ? ' on' : ''}`} aria-hidden={i !== cur}>
+              <div key={ph.name} className={`slide${i === cur ? ' on' : ''}`} style={lessMotion ? undefined : { transitionDuration: SLIDE_FADE_MS + 'ms' }} aria-hidden={i !== cur}>
                 <div className="slide-bg" style={{ backgroundImage: `url("${ph.large}")` }} />
                 <button type="button" className="slide-open" onClick={() => setOpen(i)} tabIndex={i === cur ? 0 : -1} aria-label={`View photo ${i + 1} of ${n} larger`}>
                   <img src={ph.large} alt="Shine Dance Studio" decoding="async" />
