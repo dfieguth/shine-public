@@ -10,7 +10,7 @@ It shares one Supabase database with the **shine-admin** staff tool. Everything 
 - **Homepage wording, registration switches and meeting details:** Admin → Site Content.
 - **Team, testimonials, announcements, policies, photos:** their own admin screens.
 - **Recital:** the tickets page at `/tickets` and an optional banner on the main page are both set in Admin → Recital → Tickets Page (wording needs migration 46).
-- **Photos:** the main page shows a sideways-scrolling highlights strip that moves along by itself one photo at a time (pauses on hover, touch or keyboard, has a pause button, and stays still for visitors who ask for reduced motion) (the photos ticked "Main page" in the admin, or the first 10 if none are ticked). Every photo not hidden is on the Gallery page at `/gallery`. Both load the small copies and open a larger copy on click.
+- **Photos:** the main page shows a highlights slideshow, one photo at a time: each shows for 3.5 seconds, then cross-fades to the next (arrows, dots and swiping move it by hand; it pauses on hover or keyboard focus, has a pause button, and stays still for visitors who ask for reduced motion) (the photos ticked "Main page" in the admin, or the first 10 if none are ticked). Every photo not hidden is on the Gallery page at `/gallery`. Both load the small copies and open a larger copy on click.
 - **Recital tickets (`/tickets`):** Admin → Recital Tickets.
 
 There is no built-in fallback content. If the database cannot be reached, each section shows a loading or "could not load" message, and the forms tell people to email Corrie. Nothing made-up is ever shown.
