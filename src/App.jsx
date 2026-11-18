@@ -51,6 +51,29 @@ const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
 const BUCKET = 'site-photos'
 
 // Announcement banner — shows active announcements within their date window.
+// Optional recital banner on the main page (Admin → Recital → Tickets Page).
+// Shows only while the tickets page is Coming soon or Open, so it goes away
+// by itself when the page is set back to Hidden after the show.
+function RecitalBanner() {
+  const [settings, setSettings] = useState(null)
+  useEffect(() => {
+    if (!supabase) return
+    supabase.from('recital_settings').select('*').eq('id', 1).maybeSingle().then(({ data, error }) => {
+      if (error) { console.error('RecitalBanner: could not read recital settings —', error); return }
+      setSettings(data || null)
+    })
+  }, [])
+  if (!settings || settings.home_banner_enabled !== true) return null
+  const mode = ticketsPageMode(settings)
+  if (mode === 'hidden') return null
+  const text = settings.home_banner_text || (mode === 'open' ? 'Recital tickets are open! Reserve your seats.' : 'Recital tickets are coming soon.')
+  return (
+    <div className="recital-banner">
+      <p><span>{text}</span> <a href="/tickets">{mode === 'open' ? 'Reserve tickets' : 'Learn more'} →</a></p>
+    </div>
+  )
+}
+
 function AnnouncementBanner() {
   const [items, setItems] = useState([])
   useEffect(() => {
@@ -748,6 +771,42 @@ function Highlights() {
     if (!el) return
     setEdge({ start: el.scrollLeft <= 4, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 4 })
   }
+
+  // ---- Moves along by itself, one photo every few seconds ----------------
+  // Stops while someone is pointing at it, touching it, or using the
+  // keyboard on it, and for a while after they scroll it themselves. Off
+  // from the start for visitors whose device asks for less motion, and
+  // only moves while it is on screen and the browser tab is in view. The
+  // pause button stops it for good. It only cycles through the highlight
+  // photos already on the page, so it downloads nothing extra.
+  const [playing, setPlaying] = useState(() => {
+    try { return !window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return true }
+  })
+  const hold = useRef({ hover: false, focus: false, until: 0, onScreen: false })
+  const openRef = useRef(open)
+  openRef.current = open
+  const nudge = () => { hold.current.until = Date.now() + 8000 }
+  useEffect(() => {
+    const el = track.current
+    if (!el || typeof IntersectionObserver === 'undefined') { hold.current.onScreen = true; return }
+    const io = new IntersectionObserver(([e]) => { hold.current.onScreen = e.isIntersecting }, { threshold: 0.4 })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [reelCount])
+  useEffect(() => {
+    if (!playing || reelCount < 2) return
+    const id = setInterval(() => {
+      const el = track.current, h = hold.current
+      if (!el || h.hover || h.focus || !h.onScreen || Date.now() < h.until || openRef.current !== null) return
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (el.scrollWidth <= el.clientWidth + 4) return // everything already fits
+      const items = Array.from(el.children)
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 4
+      const next = atEnd ? null : items.find((f) => f.offsetLeft > el.scrollLeft + 8)
+      el.scrollTo({ left: next ? next.offsetLeft - items[0].offsetLeft : 0, behavior: 'smooth' })
+    }, 4500)
+    return () => clearInterval(id)
+  }, [playing, reelCount])
   useEffect(() => {
     measure()
     window.addEventListener('resize', measure)
@@ -756,6 +815,7 @@ function Highlights() {
   const slide = (d) => {
     const el = track.current
     if (el) el.scrollBy({ left: d * Math.max(240, el.clientWidth * 0.8), behavior: 'smooth' })
+    nudge()
   }
 
   return (
@@ -773,7 +833,10 @@ function Highlights() {
         </div>
       ) : (
         <>
-          <div className="reel-wrap">
+          <div className="reel-wrap"
+            onMouseEnter={() => { hold.current.hover = true }} onMouseLeave={() => { hold.current.hover = false }}
+            onFocus={() => { hold.current.focus = true }} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) hold.current.focus = false }}
+            onTouchStart={nudge} onWheel={nudge} onPointerDown={nudge}>
             <button type="button" className="reel-btn reel-prev" aria-label="Earlier photos" onClick={() => slide(-1)} disabled={edge.start}>‹</button>
             <div className="reel" ref={track} onScroll={measure} tabIndex={0} role="group" aria-label="Photo highlights. Scroll sideways for more.">
               {reel.map((ph, i) => (
@@ -787,6 +850,11 @@ function Highlights() {
             <button type="button" className="reel-btn reel-next" aria-label="More photos" onClick={() => slide(1)} disabled={edge.end}>›</button>
           </div>
           <div className="reel-more">
+            {reelCount > 1 && (
+              <button type="button" className="reel-play" onClick={() => setPlaying((p) => !p)} aria-pressed={!playing} aria-label={playing ? 'Pause the slideshow' : 'Play the slideshow'}>
+                {playing ? '❚❚ Pause' : '▶ Play'}
+              </button>
+            )}
             <a href="/gallery" className="btn-outline">See all {shown.length} photos</a>
           </div>
           <Lightbox photos={reel} index={open} setIndex={setOpen} />
@@ -1559,7 +1627,7 @@ function TicketsPage() {
         <div className="policies-in">
           <a href="/" className="policies-back">← Back to Shine</a>
           <span className="eyebrow">Recital</span>
-          <h1>{pageMode === 'open' ? 'Reserve your recital tickets' : 'Recital tickets'}</h1>
+          <h1>{pageMode === 'open' ? (settings?.page_title || 'Reserve your recital tickets') : 'Recital tickets'}</h1>
           {done ? (
             <div className="form-card">
               <div className="form-ok">
@@ -1595,7 +1663,7 @@ function TicketsPage() {
                       </div>
                     </div>
                     <button className="btn-primary" onClick={() => printRecitalTicket({ showName: outcome.showName, showDate: outcome.showDate, showTime: outcome.showTime, parentName: outcome.parentName, studentName: outcome.studentName, count: outcome.confirmedCount })}>Print your ticket</button>
-                    <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 10 }}>Please bring this ticket to the show, printed or on your phone. It is good for this performance only.</p>
+                    <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 10, whiteSpace: 'pre-line' }}>{settings?.ticket_note || 'Please bring this ticket to the show, printed or on your phone. It is good for this performance only.'}</p>
                   </>
                 )}
                 {shows && shows.length > 1 && (
@@ -1635,16 +1703,18 @@ function TicketsPage() {
               <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 14 }}>Questions? Email Corrie at <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a>.</p>
             </div>
           ) : pageOff ? (
-            <p>Recital ticket reservations aren't open yet. Check back soon, or email Corrie at <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a> with any questions.</p>
+            settings?.closed_message
+              ? <PolicyBody text={settings.closed_message} />
+              : <p>Recital ticket reservations aren't open yet. Check back soon, or email Corrie at <a href="mailto:shineGHFC@gmail.com">shineGHFC@gmail.com</a> with any questions.</p>
           ) : shows.length === 0 ? (
             <p>Shows haven't been set up yet — check back soon, or email Corrie at shineGHFC@gmail.com with any questions.</p>
           ) : (
             <div className="form-card">
               {!isOpenToEveryone && (
                 <div style={{ background: '#fdf1dd', color: '#a3741f', fontSize: 14, padding: '10px 14px', borderRadius: 10, marginBottom: 16 }}>
-                  {anyShowNeedsCode
-                    ? '✦ Reservations are open to performing families. You will need the access code for your dancer\'s show. Each show has its own code.'
-                    : '✦ Reservations are currently open to performing families only. Everyone else can reserve once tickets are released.'}
+                  {'✦ '}{settings?.page_intro || (anyShowNeedsCode
+                    ? 'Reservations are open to performing families. You will need the access code for your dancer\'s show. Each show has its own code.'
+                    : 'Reservations are currently open to performing families only. Everyone else can reserve once tickets are released.')}
                 </div>
               )}
               {settings?.page_notes && <div style={{ marginBottom: 16 }}><PolicyBody text={settings.page_notes} /></div>}
@@ -1780,6 +1850,7 @@ export default function App() {
     <>
       <Nav />
       <Hero />
+      <RecitalBanner />
       <AnnouncementBanner />
       <Mission />
       <Schedule />
