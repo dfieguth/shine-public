@@ -94,7 +94,9 @@ function Reveal({ children, className = '', id }) {
   return <section ref={ref} id={id} className={`reveal ${className}`}>{children}</section>
 }
 
-function Nav() {
+// alwaysSolid: pages with a light background at the top (Gallery, Policies)
+// need the readable version of the bar from the start, not only after scrolling.
+function Nav({ alwaysSolid = false }) {
   const [solid, setSolid] = useState(false)
   const [showInterest, setShowInterest] = useState(false)
   const [iForm, setIForm] = useState({ name: '', email: '', phone: '', message: '', website: '' })
@@ -152,13 +154,13 @@ function Nav() {
   }
   return (
     <>
-      <nav className={`nav ${solid ? 'solid' : ''}`}>
+      <nav className={`nav ${solid || alwaysSolid ? 'solid' : ''}`}>
         <div className="nav-in">
           <a href="/" className="logo">Shine<span>.</span></a>
           <div className="nav-links">
             <a href="/#classes">Classes</a>
             <a href="/#instructors">Our Team</a>
-            <a href="/#gallery">Gallery</a>
+            <a href="/gallery">Gallery</a>
             <a href="/policies">Policies &amp; Forms</a>
             <button className="nav-text-btn" onClick={() => { setShowVol(true); setVDone(false); setVErr('') }}>Volunteer with us</button>
             <button className="nav-text-btn" onClick={() => { setShowInterest(true); setIDone(false); setIErr('') }}>Just have questions?</button>
@@ -620,74 +622,220 @@ function Testimonials() {
   )
 }
 
-// Gallery: reads photos Corrie uploads in the admin tool (Photos screen).
-// Shows "coming soon" tiles until photos exist. Release-cleared photos only.
+// ---- Photos --------------------------------------------------------------
+// Corrie uploads photos in the admin tool (Photos screen). Release-cleared
+// photos only. The home page shows a short "highlights" strip; the full set
+// lives on its own page at /gallery.
+//
+// The admin tool keeps three copies of each photo under the same file name:
+// the original (gallery/), a small one for grids (gallery-thumb/) and a
+// larger one shown on click (gallery-large/). A photo that has not been
+// optimized yet falls back to its original.
+//
+// Corrie's choices live in the gallery_photos table (migration 45). A photo
+// with no row there is shown in the gallery and is not a highlight. If the
+// table cannot be read, every photo is simply shown.
+const HIGHLIGHT_FALLBACK = 10 // how many photos the strip shows when none are picked
 
-function Gallery() {
-  const [photos, setPhotos] = useState([])
-  const [open, setOpen] = useState(null) // index of the photo being viewed large
+function useGalleryPhotos() {
+  const [photos, setPhotos] = useState(null) // null = still loading
   useEffect(() => {
-    if (!supabase) return
+    if (!supabase) { setPhotos([]); return }
+    let alive = true
     ;(async () => {
-      // The admin tool keeps three copies of each photo under the same file
-      // name: the original (gallery/), a small one for this grid
-      // (gallery-thumb/) and a larger one shown on click (gallery-large/).
-      // A photo that has not been optimized yet falls back to its original.
-      const store = supabase.storage.from(BUCKET)
-      const names = async (folder) => {
-        const { data } = await store.list(folder, { limit: 500 })
-        return (data || []).map((f) => f.name).filter((n) => n !== '.emptyFolderPlaceholder')
+      try {
+        const store = supabase.storage.from(BUCKET)
+        const names = async (folder) => {
+          const { data } = await store.list(folder, { limit: 500 })
+          return (data || []).map((f) => f.name).filter((n) => n !== '.emptyFolderPlaceholder')
+        }
+        const [orig, thumbs, larges, choices] = await Promise.all([
+          names('gallery'), names('gallery-thumb'), names('gallery-large'),
+          supabase.from('gallery_photos').select('name, show_in_gallery, featured, sort_order'),
+        ])
+        const url = (folder, n) => store.getPublicUrl(folder + '/' + n).data.publicUrl
+        const t = new Set(thumbs), l = new Set(larges)
+        const pick = new Map((choices.data || []).map((r) => [r.name, r]))
+        const list = orig.map((n) => {
+          const c = pick.get(n)
+          return {
+            name: n,
+            thumb: t.has(n) ? url('gallery-thumb', n) : url('gallery', n),
+            large: l.has(n) ? url('gallery-large', n) : url('gallery', n),
+            show: !c || c.show_in_gallery !== false,
+            featured: !!c && c.featured === true,
+            sort: c ? (c.sort_order || 0) : 0,
+          }
+        }).filter((ph) => ph.show)
+        list.sort((x, y) => x.sort - y.sort || x.name.localeCompare(y.name))
+        if (alive) setPhotos(list)
+      } catch (e) {
+        console.error('Gallery: could not load photos —', e)
+        if (alive) setPhotos([])
       }
-      const [orig, thumbs, larges] = await Promise.all([names('gallery'), names('gallery-thumb'), names('gallery-large')])
-      const url = (folder, n) => store.getPublicUrl(folder + '/' + n).data.publicUrl
-      const t = new Set(thumbs), l = new Set(larges)
-      setPhotos(orig.map((n) => ({
-        thumb: t.has(n) ? url('gallery-thumb', n) : url('gallery', n),
-        large: l.has(n) ? url('gallery-large', n) : url('gallery', n),
-      })))
     })()
+    return () => { alive = false }
   }, [])
+  return photos
+}
+
+// Full-screen viewer for one photo out of a list. Arrow keys and Esc work.
+function Lightbox({ photos, index, setIndex }) {
   const count = photos.length
+  const isOpen = index !== null
+  const box = useRef(null)
+  const closeBtn = useRef(null)
   useEffect(() => {
-    if (open === null) return
+    if (!isOpen) return
     function onKey(e) {
-      if (e.key === 'Escape') setOpen(null)
-      else if (e.key === 'ArrowRight') setOpen((i) => (i + 1) % count)
-      else if (e.key === 'ArrowLeft') setOpen((i) => (i - 1 + count) % count)
+      if (e.key === 'Escape') setIndex(null)
+      else if (e.key === 'ArrowRight') setIndex((i) => (i + 1) % count)
+      else if (e.key === 'ArrowLeft') setIndex((i) => (i - 1 + count) % count)
+      else if (e.key === 'Tab' && box.current) {
+        // Keep the Tab key inside the viewer while it is open.
+        const btns = Array.from(box.current.querySelectorAll('button'))
+        if (!btns.length) return
+        e.preventDefault()
+        const at = btns.indexOf(document.activeElement)
+        btns[(at + (e.shiftKey ? -1 : 1) + btns.length) % btns.length].focus()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, count])
-  const step = (e, d) => { e.stopPropagation(); setOpen((i) => (i + d + count) % count) }
-  const tiles = count ? photos : [null, null, null, null, null]
+  }, [isOpen, count, setIndex])
+  // While open: stop the page behind from scrolling, put the keyboard on the
+  // Close button, and hand it back to the photo that was clicked on closing.
+  useEffect(() => {
+    if (!isOpen) return
+    const opener = document.activeElement
+    const before = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    if (closeBtn.current) closeBtn.current.focus()
+    return () => {
+      document.body.style.overflow = before
+      if (opener && opener.focus) opener.focus()
+    }
+  }, [isOpen])
+  if (!isOpen || !photos[index]) return null
+  const step = (e, d) => { e.stopPropagation(); setIndex((i) => (i + d + count) % count) }
+  // Rendered straight into <body> so no animated parent can clip it.
+  return createPortal(
+    <div className="lightbox" ref={box} role="dialog" aria-modal="true" aria-label={`Photo ${index + 1} of ${count}`} onClick={() => setIndex(null)}>
+      <button type="button" ref={closeBtn} className="lightbox-btn lightbox-close" aria-label="Close" onClick={() => setIndex(null)}>×</button>
+      {count > 1 && <button type="button" className="lightbox-btn lightbox-prev" aria-label="Previous photo" onClick={(e) => step(e, -1)}>‹</button>}
+      <img key={photos[index].large} src={photos[index].large} alt="Shine Dance Studio" onClick={(e) => e.stopPropagation()} />
+      {count > 1 && <button type="button" className="lightbox-btn lightbox-next" aria-label="Next photo" onClick={(e) => step(e, 1)}>›</button>}
+    </div>,
+    document.body
+  )
+}
+
+// Home page: a strip of highlights that scrolls sideways (swipe, scroll, or
+// the arrow buttons). It never moves on its own. Shows the photos Corrie
+// ticked "Feature on main page"; until she picks any, the first few.
+function Highlights() {
+  const all = useGalleryPhotos()
+  const [open, setOpen] = useState(null)
+  const track = useRef(null)
+  const [edge, setEdge] = useState({ start: true, end: true })
+  const shown = all || []
+  const featured = shown.filter((ph) => ph.featured)
+  const reel = featured.length ? featured : shown.slice(0, HIGHLIGHT_FALLBACK)
+  const reelCount = reel.length
+
+  const measure = () => {
+    const el = track.current
+    if (!el) return
+    setEdge({ start: el.scrollLeft <= 4, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 4 })
+  }
+  useEffect(() => {
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [reelCount])
+  const slide = (d) => {
+    const el = track.current
+    if (el) el.scrollBy({ left: d * Math.max(240, el.clientWidth * 0.8), behavior: 'smooth' })
+  }
+
   return (
     <Reveal className="section" id="gallery">
       <div className="section-head">
         <span className="eyebrow">In the Studio</span>
         <h2>See the joy</h2>
-        <p>Photos from our classes and recitals.{count === 0 && ' (More coming soon!)'}</p>
+        <p>Photos from our classes and recitals.{all !== null && shown.length === 0 && ' (More coming soon!)'}</p>
       </div>
-      <div className="gallery-grid">
-        {tiles.map((ph, i) => (
-          <figure className={ph ? 'has-img' : ''} key={i}>
-            {ph
-              ? <button type="button" className="gallery-open" onClick={() => setOpen(i)} aria-label="View this photo larger">
-                  <img src={ph.thumb} alt="Shine Dance Studio" loading="lazy" decoding="async" />
-                </button>
-              : <span>Photo coming soon</span>}
-          </figure>
-        ))}
-      </div>
-      {open !== null && photos[open] && createPortal(
-        <div className="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer" onClick={() => setOpen(null)}>
-          <button type="button" className="lightbox-btn lightbox-close" aria-label="Close" onClick={() => setOpen(null)}>×</button>
-          {count > 1 && <button type="button" className="lightbox-btn lightbox-prev" aria-label="Previous photo" onClick={(e) => step(e, -1)}>‹</button>}
-          <img key={photos[open].large} src={photos[open].large} alt="Shine Dance Studio" onClick={(e) => e.stopPropagation()} />
-          {count > 1 && <button type="button" className="lightbox-btn lightbox-next" aria-label="Next photo" onClick={(e) => step(e, 1)}>›</button>}
-        </div>,
-        document.body
+      {all === null ? (
+        <div className="reel-loading" aria-hidden="true" />
+      ) : reelCount === 0 ? (
+        <div className="gallery-grid">
+          {[0, 1, 2, 3, 4].map((i) => <figure key={i}><span>Photo coming soon</span></figure>)}
+        </div>
+      ) : (
+        <>
+          <div className="reel-wrap">
+            <button type="button" className="reel-btn reel-prev" aria-label="Earlier photos" onClick={() => slide(-1)} disabled={edge.start}>‹</button>
+            <div className="reel" ref={track} onScroll={measure} tabIndex={0} role="group" aria-label="Photo highlights. Scroll sideways for more.">
+              {reel.map((ph, i) => (
+                <figure key={ph.name}>
+                  <button type="button" className="gallery-open" onClick={() => setOpen(i)} aria-label={`View photo ${i + 1} of ${reelCount} larger`}>
+                    <img src={ph.thumb} alt="Shine Dance Studio" loading="lazy" decoding="async" onLoad={measure} />
+                  </button>
+                </figure>
+              ))}
+            </div>
+            <button type="button" className="reel-btn reel-next" aria-label="More photos" onClick={() => slide(1)} disabled={edge.end}>›</button>
+          </div>
+          <div className="reel-more">
+            <a href="/gallery" className="btn-outline">See all {shown.length} photos</a>
+          </div>
+          <Lightbox photos={reel} index={open} setIndex={setOpen} />
+        </>
       )}
     </Reveal>
+  )
+}
+
+// /gallery — every photo Corrie has not hidden, in a grid.
+function GalleryPage() {
+  const photos = useGalleryPhotos()
+  const [open, setOpen] = useState(null)
+  useEffect(() => {
+    const before = document.title
+    document.title = 'Photo Gallery | Shine Dance Studio'
+    return () => { document.title = before }
+  }, [])
+  return (
+    <>
+      <Nav alwaysSolid />
+      <div className="gallery-page">
+        <div className="gallery-page-in">
+          <a href="/" className="policies-back">← Back to Shine</a>
+          <span className="eyebrow">In the Studio</span>
+          <h1>Photo gallery</h1>
+          {photos === null ? (
+            <p className="policies-loading">Loading…</p>
+          ) : photos.length === 0 ? (
+            <p className="policies-loading">Photos are coming soon. Please check back!</p>
+          ) : (
+            <>
+              <p className="gallery-page-hint">Tap any photo to see it larger.</p>
+              <div className="gallery-grid">
+                {photos.map((ph, i) => (
+                  <figure className="has-img" key={ph.name}>
+                    <button type="button" className="gallery-open" onClick={() => setOpen(i)} aria-label={`View photo ${i + 1} of ${photos.length} larger`}>
+                      <img src={ph.thumb} alt="Shine Dance Studio" loading="lazy" decoding="async" />
+                    </button>
+                  </figure>
+                ))}
+              </div>
+              <Lightbox photos={photos} index={open} setIndex={setOpen} />
+            </>
+          )}
+        </div>
+      </div>
+      <Footer />
+    </>
   )
 }
 
@@ -1406,7 +1554,7 @@ function TicketsPage() {
 
   return (
     <>
-      <Nav />
+      <Nav alwaysSolid />
       <div className="policies-page">
         <div className="policies-in">
           <a href="/" className="policies-back">← Back to Shine</a>
@@ -1565,7 +1713,7 @@ function PoliciesPage() {
   }, [])
   return (
     <>
-      <Nav />
+      <Nav alwaysSolid />
       <div className="policies-page">
         <div className="policies-in">
           <a href="/" className="policies-back">← Back to Shine</a>
@@ -1596,8 +1744,9 @@ function PoliciesPage() {
 export default function App() {
   const isPolicies = typeof window !== 'undefined' && window.location.pathname.replace(/\/$/, '') === '/policies'
   const isTickets = typeof window !== 'undefined' && window.location.pathname.replace(/\/$/, '') === '/tickets'
+  const isGallery = typeof window !== 'undefined' && window.location.pathname.replace(/\/$/, '') === '/gallery'
   useEffect(() => {
-    if (isPolicies || isTickets) return
+    if (isPolicies || isTickets || isGallery) return
     let t1, t2
     const scrollToHash = () => {
       const hash = window.location.hash.replace('#', '')
@@ -1623,8 +1772,9 @@ export default function App() {
     scrollWithRetries()
     window.addEventListener('hashchange', scrollWithRetries)
     return () => { window.removeEventListener('hashchange', scrollWithRetries); clearTimeout(t1); clearTimeout(t2) }
-  }, [isPolicies, isTickets])
+  }, [isPolicies, isTickets, isGallery])
   if (isPolicies) return <PoliciesPage />
+  if (isGallery) return <GalleryPage />
   if (isTickets) return <TicketsPage />
   return (
     <>
@@ -1635,7 +1785,7 @@ export default function App() {
       <Schedule />
       <Instructors />
       <Testimonials />
-      <Gallery />
+      <Highlights />
       <Support />
       <Register />
       <Footer />
