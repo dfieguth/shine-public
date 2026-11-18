@@ -754,7 +754,7 @@ function Lightbox({ photos, index, setIndex }) {
 }
 
 // Home page: a slideshow of highlights, one photo at a time. Each photo
-// stays fully visible for 3.5 seconds, then cross-fades into the next, and
+// stays fully visible for 4.5 seconds, then cross-fades into the next, and
 // it loops. Arrows, dots and swiping on a phone move it by hand. It shows
 // the photos Corrie ticked "Main page highlight"; until she picks any, the
 // first few.
@@ -768,8 +768,8 @@ function Lightbox({ photos, index, setIndex }) {
 // filling the frame looks sharp. Nothing loads until the slideshow is
 // nearly on screen, and then only the photo showing plus the next one, so
 // photos are only downloaded as they come up.
-const SLIDE_SHOW_MS = 3500 // fully visible
-const SLIDE_FADE_MS = 900 // cross-fade (keep in step with .slide in index.css)
+const SLIDE_SHOW_MS = 4500 // fully visible
+const SLIDE_FADE_MS = 1800 // cross-fade (keep in step with .slide in index.css)
 function prefersLessMotion() {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return false }
 }
@@ -815,7 +815,7 @@ function Highlights() {
   }, [n])
 
   // The clock. Restarts whenever the photo changes, so moving it by hand
-  // always gives the new photo its full 3.5 seconds.
+  // always gives the new photo its full 4.5 seconds.
   useEffect(() => {
     if (!playing || n < 2 || !seen) return
     let t
